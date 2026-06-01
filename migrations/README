@@ -1,0 +1,9 @@
+数据库 schema 变更统一通过 Alembic 管理。
+
+常用命令：
+
+- 生成迁移：`uv run alembic revision --autogenerate -m "message"`
+- 执行迁移：`uv run alembic upgrade head`
+- 回滚一版：`uv run alembic downgrade -1`
+
+生成迁移后必须人工 review，确认字段类型、索引、comment、默认值和数据迁移逻辑符合预期。

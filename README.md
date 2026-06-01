@@ -1,0 +1,137 @@
+# FastAPI Template
+
+一个基于 FastAPI、SQLModel、MySQL、JWT、Ruff 和 uv 的后端模板。项目包含用户认证、users/todos CRUD、统一响应、全局异常处理、请求日志、Docker 启动和本地开发规范。
+
+## 目录
+
+```text
+.
+├── app/                         # 应用源码
+│   ├── api/                     # API 层：路由聚合、通用依赖、通用 schemas
+│   │   ├── deps.py              # 数据库 Session、登录鉴权、分页 query 依赖
+│   │   ├── router.py            # API router 汇总入口
+│   │   ├── schemas.py           # ApiSchema / ApiResponse 通用响应结构
+│   │   └── v1/                  # v1 接口模块
+│   │       ├── health.py        # 健康检查接口
+│   │       ├── todos/           # todos CRUD 模块
+│   │       └── users/           # users、注册、登录模块
+│   ├── core/                    # 核心配置、数据库、日志、异常处理
+│   ├── middlewares/             # 请求日志等中间件
+│   ├── shared/                  # 跨层复用工具、常量、安全方法
+│   └── main.py                  # FastAPI app 创建和中间件/router 注册
+├── tests/                       # 单元测试和接口行为测试
+├── migrations/                  # Alembic 数据库迁移脚本
+├── static/                      # 静态资源目录
+├── logs/                        # 本地日志输出目录
+├── .env                         # 本地环境配置
+├── .env.test                    # 测试环境配置
+├── .env.prod                    # 生产环境配置模板
+├── .editorconfig                # 编辑器基础格式规范
+├── .pre-commit-config.yaml      # pre-commit 检查配置
+├── .vscode/settings.json        # VS Code / Cursor 保存格式化配置
+├── docker-compose.yaml          # 本地 Docker Compose 编排
+├── Dockerfile                   # 应用镜像构建文件
+├── alembic.ini                  # Alembic 配置
+├── pyproject.toml               # 项目依赖和工具配置
+├── uv.lock                      # uv 锁文件
+└── uvicorn-log-config.yaml      # Uvicorn 日志配置
+```
+
+## 本地启动
+
+安装依赖：
+
+```bash
+uv sync --dev
+```
+
+启动 MySQL：
+
+```bash
+docker compose up mysql -d --build
+```
+
+启动应用：
+
+```bash
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload --log-config uvicorn-log-config.yaml
+```
+
+## Docker 启动
+
+```bash
+docker compose up --build
+```
+
+应用容器启动时会先执行 `uv run alembic upgrade head`，再启动 Uvicorn。应用默认暴露 `8000`，MySQL 默认暴露 `3306`。
+
+## 数据库迁移
+
+数据库 schema 变更统一通过 Alembic 管理：
+
+```bash
+# 根据当前 SQLModel metadata 和数据库现状生成迁移文件；只生成文件，不会改数据库
+uv run alembic revision --autogenerate -m "message"
+
+# 执行所有未应用的迁移，把数据库升级到最新版本
+uv run alembic upgrade head
+
+# 回滚上一个迁移版本，常用于验证 migration 是否可逆
+uv run alembic downgrade -1
+```
+
+生成迁移后必须人工 review，重点确认字段类型、索引、comment、默认值和数据迁移逻辑。`CREATE_DB_TABLES` 只用于本地或测试快速初始化，生产环境不会在应用启动时自动建表。
+
+## 文档地址
+
+本地启动后访问：
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- OpenAPI JSON: `http://127.0.0.1:8000/api/v1/openapi.json`
+
+## 校验和测试指令
+
+安装 pre-commit hooks：
+
+```bash
+uv run pre-commit install
+```
+
+常用检查：
+
+```bash
+uv run ruff check app tests
+uv run ruff format app tests
+uv run pytest -q
+uv run pre-commit run --all-files
+```
+
+如需启用 VS Code / Cursor 保存自动格式化，需要安装 Ruff 插件：
+`https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff`
+
+## 环境文件
+
+- `.env`: 本地开发
+- `.env.test`: 测试环境
+- `.env.prod`: 生产环境模板
+
+`STATIC_DIR` 和 `LOG_DIR` 支持相对路径或绝对路径；相对路径会基于项目根目录解析。
+
+默认按 `APP_ENV` 选择配置文件：
+
+- `APP_ENV=local` -> `.env`
+- `APP_ENV=test` -> `.env.test`
+- `APP_ENV=production` -> `.env.prod`
+
+也可以显式指定：
+
+```bash
+ENV_FILE=.env.prod uv run uvicorn app.main:app --log-config uvicorn-log-config.yaml
+```
+
+## 日志
+
+项目使用 Uvicorn logging config + Python logging 混合方案：Uvicorn 负责 server/access 日志输出，应用侧 formatter 统一时间、等级、模块和 request_id。业务 request/response 日志由中间件采集，日志同时输出到控制台和 `LOG_DIR` 对应目录下的 `app.log` / `error.log`。
+
+默认 `LOG_LEVEL=INFO`，如需查看请求体、响应体和 SQL 调试日志，可设置 `LOG_LEVEL=DEBUG`，SQL 还需要 `SQL_ECHO=true`。
