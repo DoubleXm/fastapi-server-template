@@ -1,6 +1,6 @@
 # FastAPI Template
 
-一个基于 FastAPI、SQLModel、MySQL、JWT、Ruff 和 uv 的后端模板。项目包含用户认证、users/todos CRUD、统一响应、全局异常处理、请求日志、Docker 启动和本地开发规范。
+一个基于 FastAPI、SQLModel、Pydantic、MySQL、JWT、Ruff 和 uv 的后端模板。项目包含用户认证、users/todos CRUD、统一响应、全局异常处理、请求日志、Docker 启动和本地开发规范。
 
 ## 目录
 
