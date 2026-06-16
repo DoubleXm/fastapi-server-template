@@ -11,6 +11,8 @@ import app.core.logger as logger_core
 import app.middlewares.logging as logging_middleware
 from app.core.database import engine
 from app.core.logger import get_logger, request_id_context, setup_logging
+from app.core.logger.sqlalchemy import SqlAlchemyHandler
+from app.core.logger.uvicorn import InterceptHandler
 
 
 def test_sql_engine_echo_is_disabled_to_avoid_duplicate_console_logs() -> None:
@@ -91,7 +93,7 @@ def test_console_logging_uses_color_markup(tmp_path: Path) -> None:
     assert "colored console log" in console_output
 
 
-def test_uvicorn_loggers_are_disabled_and_not_written_by_loguru(
+def test_uvicorn_error_logs_are_forwarded_and_access_logs_are_disabled(
     tmp_path: Path,
 ) -> None:
     setup_logging(
@@ -101,16 +103,17 @@ def test_uvicorn_loggers_are_disabled_and_not_written_by_loguru(
         backup_count=1,
     )
 
-    for logger_name in (
-        "uvicorn",
-        "uvicorn.error",
-        "uvicorn.access",
-        "uvicorn.asgi",
-    ):
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.asgi"):
         uvicorn_logger = logging.getLogger(logger_name)
-        assert uvicorn_logger.disabled is True
-        assert uvicorn_logger.handlers == []
+        assert uvicorn_logger.disabled is False
+        assert len(uvicorn_logger.handlers) == 1
+        assert isinstance(uvicorn_logger.handlers[0], InterceptHandler)
         assert uvicorn_logger.propagate is False
+
+    access_logger = logging.getLogger("uvicorn.access")
+    assert access_logger.disabled is True
+    assert access_logger.handlers == []
+    assert access_logger.propagate is False
 
     logging.getLogger("uvicorn.error").critical("Application startup complete.")
     logging.getLogger("uvicorn.access").critical(
@@ -122,9 +125,30 @@ def test_uvicorn_loggers_are_disabled_and_not_written_by_loguru(
         401,
     )
     log_content = (tmp_path / "app.log").read_text(encoding="utf-8")
-    assert "uvicorn.server" not in log_content
+    assert "uvicorn.error" in log_content
+    assert "Application startup complete." in log_content
     assert "uvicorn.access" not in log_content
-    assert "Application startup complete." not in log_content
+
+
+def test_error_traceback_uses_compact_loguru_output(tmp_path: Path) -> None:
+    setup_logging(
+        log_dir=tmp_path,
+        level="INFO",
+        max_bytes=1024 * 1024,
+        backup_count=1,
+    )
+    app_logger = get_logger("app.error")
+
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        app_logger.exception("Unhandled exception")
+
+    error_content = (tmp_path / "error.log").read_text(encoding="utf-8")
+    assert "Traceback (most recent call last):" in error_content
+    assert "ValueError: boom" in error_content
+    assert "└" not in error_content
+    assert "│" not in error_content
 
 
 def test_sql_logging_keeps_multiline_statement_and_filters_result_noise(
@@ -137,6 +161,8 @@ def test_sql_logging_keeps_multiline_statement_and_filters_result_noise(
         backup_count=1,
     )
     sql_logger = logging.getLogger("sqlalchemy.engine")
+    assert len(sql_logger.handlers) == 1
+    assert isinstance(sql_logger.handlers[0], SqlAlchemyHandler)
 
     sql_logger.debug("SELECT users.id \nFROM users \nWHERE users.username = %(name)s")
     sql_logger.debug("Row (1, 'secret-hash')")

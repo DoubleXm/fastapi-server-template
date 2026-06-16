@@ -9,8 +9,8 @@ from typing import Any
 from loguru import logger
 
 from app.core.config import settings
-from app.core.logger.sqlalchemy import setup_sqlalchemy_logging
-from app.core.logger.uvicorn import disable_uvicorn_logging
+from app.core.logger.sqlalchemy import configure_sqlalchemy_logging
+from app.core.logger.uvicorn import configure_uvicorn_logging
 
 request_id_context: ContextVar[str] = ContextVar[str]("request_id", default="-")
 
@@ -57,6 +57,8 @@ def setup_logging(
         console_sink or sys.stderr,
         level=normalized_level,
         colorize=True,
+        backtrace=False,
+        diagnose=False,
     )
     logger.add(
         log_dir / "app.log",
@@ -65,6 +67,8 @@ def setup_logging(
         retention=backup_count,
         encoding="utf-8",
         colorize=False,
+        backtrace=False,
+        diagnose=False,
     )
     logger.add(
         log_dir / "error.log",
@@ -73,9 +77,11 @@ def setup_logging(
         retention=backup_count,
         encoding="utf-8",
         colorize=False,
+        backtrace=False,
+        diagnose=False,
     )
-    setup_sqlalchemy_logging(level)
-    disable_uvicorn_logging()
+    configure_sqlalchemy_logging(level)
+    configure_uvicorn_logging()
 
 
 def get_logger(name: str | None = None):

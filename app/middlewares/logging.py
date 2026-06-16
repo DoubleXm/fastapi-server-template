@@ -106,7 +106,7 @@ def format_request_line(request: Request) -> str:
     return f'{client_addr} - "{request.method} {target} HTTP/{http_version}"'
 
 
-logger = get_logger()
+logger = get_logger("app.request")
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):

@@ -1,9 +1,10 @@
 import logging
+import os
 
 from loguru import logger
 
-# "uvicorn.access",
-_UVICORN_LOGGER_NAMES = ("uvicorn", "uvicorn.error", "uvicorn.asgi")
+# "uvicorn.access"
+_UVICORN_LOGGER_NAMES = ("uvicorn.error", "uvicorn", "uvicorn.asgi")
 
 
 class InterceptHandler(logging.Handler):
@@ -19,19 +20,23 @@ class InterceptHandler(logging.Handler):
         while frame:
             filename = frame.f_code.co_filename
             # 只要文件名包含 python 内部的 logging 库、或者是当前处理器的 emit 方法，就继续往上找  # noqa: E501
-            if "logging" in filename or filename == __file__:
+            if filename == __file__ or f"{os.sep}logging{os.sep}" in filename:
                 frame = frame.f_back
                 depth += 1
             else:
                 break
 
-        logger.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
-        )
+        logger.bind(display_name=record.name).opt(
+            depth=depth,
+            exception=record.exc_info,
+        ).log(level, record.getMessage())
 
 
-def disable_uvicorn_logging() -> None:
-    """彻底关闭 Uvicorn 自身 logger，避免 server/access 日志打印。"""
+def configure_uvicorn_logging() -> None:
+    """配置 Uvicorn 日志共存策略：error 转 Loguru，access 由中间件接管。"""
+
+    # 禁用原生 access log 输出
+    # INFO:     127.0.0.1:58932 - "POST /api/v1/users/register HTTP/1.1" 409 Conflict
     access_logger = logging.getLogger("uvicorn.access")
     access_logger.handlers.clear()
     access_logger.propagate = False
@@ -45,6 +50,3 @@ def disable_uvicorn_logging() -> None:
         uvicorn_logger.addHandler(InterceptHandler())
         # 禁止日志向上冒泡
         uvicorn_logger.propagate = False
-
-    logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
-    logging.getLogger("uvicorn.error").handlers = [InterceptHandler()]

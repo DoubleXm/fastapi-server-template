@@ -21,7 +21,7 @@ class HealthPayload(ApiSchema):
 )
 def health_check() -> dict:
     payload = HealthPayload(status="ok", environment=settings.APP_ENV)
-    raise ValueError()
+    # raise ValueError()
     return ApiResponse.success(
         data=payload.model_dump(by_alias=True),
     )
