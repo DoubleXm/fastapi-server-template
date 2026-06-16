@@ -6,12 +6,21 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import app.middlewares.logging as logging_middleware
-from app.middlewares.logging import DetailLogMiddleware
+from app.middlewares.logging import LoggingMiddleware
+
+
+def render_loguru_message(message: str, *args) -> str:
+    return message.format(*args) if args else message
+
+
+def test_logging_middleware_name_matches_file_name() -> None:
+    assert hasattr(logging_middleware, "LoggingMiddleware")
+    assert not hasattr(logging_middleware, "DetailLogMiddleware")
 
 
 def test_detail_log_middleware_returns_request_id_header() -> None:
     app = FastAPI()
-    app.add_middleware(DetailLogMiddleware)
+    app.add_middleware(LoggingMiddleware)
 
     @app.get("/ping")
     def ping() -> dict[str, str]:
@@ -32,33 +41,38 @@ def test_detail_log_middleware_logs_bodies_at_debug_level(
 
     class CapturingLogger:
         def debug(self, message, *args) -> None:
-            records.append((logging.DEBUG, message % args if args else message))
+            records.append((logging.DEBUG, render_loguru_message(message, *args)))
 
         def info(self, message, *args) -> None:
-            records.append((logging.INFO, message % args if args else message))
+            records.append((logging.INFO, render_loguru_message(message, *args)))
 
-    monkeypatch.setattr(logging_middleware, "request_logger", CapturingLogger())
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
 
     app = FastAPI()
-    app.add_middleware(DetailLogMiddleware)
+    app.add_middleware(LoggingMiddleware)
 
-    @app.post("/echo")
+    @app.post("/api/v1/users")
     async def echo(payload: dict) -> dict:
         return payload
 
     client = TestClient(app)
 
-    response = client.post("/echo", json={"name": "alice"})
+    response = client.post("/api/v1/users", json={"name": "alice"})
 
     assert response.status_code == 200
     assert records
     assert [level for level, _ in records] == [
         logging.DEBUG,
         logging.DEBUG,
+        logging.INFO,
         logging.DEBUG,
     ]
     assert any("Request headers" in message for _, message in records)
     assert any("Request body" in message for _, message in records)
+    assert any(
+        'testclient:50000 - "POST /api/v1/users HTTP/1.1"' in message
+        for _, message in records
+    )
     assert any("Response body" in message for _, message in records)
 
 
@@ -69,12 +83,15 @@ def test_detail_log_middleware_logs_request_headers_with_redaction(
 
     class CapturingLogger:
         def debug(self, message, *args) -> None:
-            records.append(message % args if args else message)
+            records.append(render_loguru_message(message, *args))
 
-    monkeypatch.setattr(logging_middleware, "request_logger", CapturingLogger())
+        def info(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
 
     app = FastAPI()
-    app.add_middleware(DetailLogMiddleware)
+    app.add_middleware(LoggingMiddleware)
 
     @app.get("/headers")
     async def headers() -> dict[str, str]:
@@ -105,12 +122,15 @@ def test_detail_log_middleware_redacts_authorization_without_scheme(
 
     class CapturingLogger:
         def debug(self, message, *args) -> None:
-            records.append(message % args if args else message)
+            records.append(render_loguru_message(message, *args))
 
-    monkeypatch.setattr(logging_middleware, "request_logger", CapturingLogger())
+        def info(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
 
     app = FastAPI()
-    app.add_middleware(DetailLogMiddleware)
+    app.add_middleware(LoggingMiddleware)
 
     @app.get("/headers")
     async def headers() -> dict[str, str]:
@@ -131,12 +151,15 @@ def test_detail_log_middleware_keeps_nested_authorization_scheme(monkeypatch) ->
 
     class CapturingLogger:
         def debug(self, message, *args) -> None:
-            records.append(message % args if args else message)
+            records.append(render_loguru_message(message, *args))
 
-    monkeypatch.setattr(logging_middleware, "request_logger", CapturingLogger())
+        def info(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
 
     app = FastAPI()
-    app.add_middleware(DetailLogMiddleware)
+    app.add_middleware(LoggingMiddleware)
 
     @app.get("/headers")
     async def headers() -> dict[str, str]:
@@ -160,12 +183,15 @@ def test_detail_log_middleware_redacts_sensitive_body_fields(monkeypatch) -> Non
 
     class CapturingLogger:
         def debug(self, message, *args) -> None:
-            records.append(message % args if args else message)
+            records.append(render_loguru_message(message, *args))
 
-    monkeypatch.setattr(logging_middleware, "request_logger", CapturingLogger())
+        def info(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
 
     app = FastAPI()
-    app.add_middleware(DetailLogMiddleware)
+    app.add_middleware(LoggingMiddleware)
 
     @app.post("/login")
     async def login(payload: dict) -> dict:
@@ -194,12 +220,15 @@ def test_detail_log_middleware_redacts_camel_case_access_token(monkeypatch) -> N
 
     class CapturingLogger:
         def debug(self, message, *args) -> None:
-            records.append(message % args if args else message)
+            records.append(render_loguru_message(message, *args))
 
-    monkeypatch.setattr(logging_middleware, "request_logger", CapturingLogger())
+        def info(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
 
     app = FastAPI()
-    app.add_middleware(DetailLogMiddleware)
+    app.add_middleware(LoggingMiddleware)
 
     @app.get("/auth")
     async def auth() -> dict[str, str]:
@@ -220,12 +249,15 @@ def test_detail_log_middleware_truncates_large_bodies(monkeypatch) -> None:
 
     class CapturingLogger:
         def debug(self, message, *args) -> None:
-            records.append(message % args if args else message)
+            records.append(render_loguru_message(message, *args))
 
-    monkeypatch.setattr(logging_middleware, "request_logger", CapturingLogger())
+        def info(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
 
     app = FastAPI()
-    app.add_middleware(DetailLogMiddleware)
+    app.add_middleware(LoggingMiddleware)
 
     @app.post("/echo")
     async def echo(payload: dict) -> dict:

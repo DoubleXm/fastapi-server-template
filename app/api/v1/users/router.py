@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 from fastapi import APIRouter, Depends, status
 
 from app.api.deps import CurrentUser, PaginationDep, SessionDep, get_current_user
@@ -15,16 +13,6 @@ from app.api.v1.users.schemas import (
     UserPublic,
     UserRegister,
     UserUpdate,
-)
-from app.core.config import settings
-from app.core.logging import configure_app_logger
-
-auth_logger = configure_app_logger(
-    "app.auth",
-    log_dir=settings.logs_dir_path,
-    level=logging.getLevelName(settings.LOG_LEVEL),
-    max_bytes=settings.LOG_MAX_BYTES,
-    backup_count=settings.LOG_BACKUP_COUNT,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])

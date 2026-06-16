@@ -1,4 +1,3 @@
-import logging
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Query, Security, status
@@ -7,19 +6,9 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from sqlmodel import Session
 
 from app.api.v1.users.models import User
-from app.core.config import settings
 from app.core.database import get_db
-from app.core.logging import configure_app_logger
 from app.shared.constants import DEFAULT_PAGE_NUM, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.shared.security import decode_access_token
-
-auth_logger = configure_app_logger(
-    "app.auth",
-    log_dir=settings.logs_dir_path,
-    level=logging.getLevelName(settings.LOG_LEVEL),
-    max_bytes=settings.LOG_MAX_BYTES,
-    backup_count=settings.LOG_BACKUP_COUNT,
-)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 SessionDep = Annotated[Session, Depends(get_db)]

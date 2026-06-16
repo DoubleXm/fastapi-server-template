@@ -1,27 +1,17 @@
-import logging
-
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from starlette import status
 
 from app.api.schemas import ApiResponse
 from app.core.config import settings
-from app.core.logging import configure_app_logger
+from app.core.logger import get_logger
 
-error_logger = logging.getLogger("app.error")
-log_level = logging.getLevelName(settings.LOG_LEVEL)
-error_logger = configure_app_logger(
-    error_logger.name,
-    log_dir=settings.logs_dir_path,
-    level=log_level,
-    max_bytes=settings.LOG_MAX_BYTES,
-    backup_count=settings.LOG_BACKUP_COUNT,
-)
+logger = get_logger()
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    error_logger.warning(
-        "Request validation failed method=%s path=%s errors=%s",
+    logger.warning(
+        "Request validation failed method={} path={} errors={}",
         request.method,
         request.url.path,
         exc.errors(),
@@ -34,8 +24,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 async def http_exception_handler(request: Request, exc: HTTPException):
-    error_logger.warning(
-        "HTTP exception status_code=%s method=%s path=%s detail=%s",
+    logger.warning(
+        "HTTP exception status_code={} method={} path={} detail={}",
         exc.status_code,
         request.method,
         request.url.path,
@@ -49,8 +39,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 async def global_exception_handler(request: Request, exc: Exception):
-    error_logger.error(
-        "Unhandled exception method=%s path=%s error=%s",
+    logger.error(
+        "Unhandled exception method={} path={} error={}",
         request.method,
         request.url.path,
         str(exc),
@@ -58,7 +48,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     return ApiResponse.fail(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         message="Internal server error",
-        data={"detail": str(exc) if settings.DEBUG else "Internal server error"},
+        data={
+            "detail": str(exc)
+            if settings.APP_ENV == "local"
+            else "Internal server error"
+        },
     )
 
 

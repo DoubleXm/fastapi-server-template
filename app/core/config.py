@@ -34,7 +34,6 @@ class Settings(BaseSettings):
 
     APP_NAME: str
     APP_ENV: Literal["local", "test", "production"]
-    DEBUG: bool
     API_V1_PREFIX: str
 
     SECRET_KEY: str = Field(..., min_length=16)

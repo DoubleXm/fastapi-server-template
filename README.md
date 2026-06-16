@@ -33,8 +33,7 @@
 ├── Dockerfile                   # 应用镜像构建文件
 ├── alembic.ini                  # Alembic 配置
 ├── pyproject.toml               # 项目依赖和工具配置
-├── uv.lock                      # uv 锁文件
-└── uvicorn-log-config.yaml      # Uvicorn 日志配置
+└── uv.lock                      # uv 锁文件
 ```
 
 ## 本地启动
@@ -55,7 +54,7 @@ docker compose up mysql -d --build
 
 ```bash
 uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --log-config uvicorn-log-config.yaml
+uv run uvicorn app.main:app --reload
 ```
 
 ## Docker 启动
@@ -124,14 +123,16 @@ uv run pre-commit run --all-files
 - `APP_ENV=test` -> `.env.test`
 - `APP_ENV=production` -> `.env.prod`
 
+应用调试行为由 `APP_ENV` 派生：只有 `APP_ENV=local` 时启用 FastAPI debug 和详细异常信息。
+
 也可以显式指定：
 
 ```bash
-ENV_FILE=.env.prod uv run uvicorn app.main:app --log-config uvicorn-log-config.yaml
+ENV_FILE=.env.prod uv run uvicorn app.main:app
 ```
 
 ## 日志
 
-项目使用 Uvicorn logging config + Python logging 混合方案：Uvicorn 负责 server/access 日志输出，应用侧 formatter 统一时间、等级、模块和 request_id。业务 request/response 日志由中间件采集，日志同时输出到控制台和 `LOG_DIR` 对应目录下的 `app.log` / `error.log`。
+项目使用 Loguru 统一处理日志：业务代码通过绑定名称的 Loguru logger 输出，SQLAlchemy 等第三方标准库 `logging` 记录通过 bridge 转发到 Loguru，Uvicorn 自身 server/access/asgi 日志在应用入口中关闭。日志格式统一包含时间、等级、模块和 request_id。业务 request/response 日志由中间件采集，日志同时输出到控制台和 `LOG_DIR` 对应目录下的 `app.log` / `error.log`。
 
 默认 `LOG_LEVEL=INFO`，如需查看请求体、响应体和 SQL 调试日志，可设置 `LOG_LEVEL=DEBUG`，SQL 还需要 `SQL_ECHO=true`。

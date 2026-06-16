@@ -8,7 +8,6 @@ def make_settings(*, app_env: str, create_db_tables: bool = False) -> Settings:
     return Settings(
         APP_NAME="app",
         APP_ENV=app_env,
-        DEBUG=False,
         API_V1_PREFIX="/api/v1",
         SECRET_KEY="x" * 32,
         JWT_ALGORITHM="HS256",

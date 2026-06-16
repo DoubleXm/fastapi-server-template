@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -11,13 +10,14 @@ from starlette.staticfiles import StaticFiles
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import (
-    configure_sql_logging,
     create_db_and_tables,
     should_create_db_and_tables,
 )
 from app.core.exception_handlers import register_exception_handlers
-from app.core.logging import configure_uvicorn_access_file_logging
-from app.middlewares.logging import DetailLogMiddleware
+from app.core.logger import setup_logging
+from app.middlewares.logging import LoggingMiddleware
+
+setup_logging()
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -34,7 +34,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    debug=settings.DEBUG,
+    debug=settings.APP_ENV == "local",
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     generate_unique_id_function=custom_generate_unique_id,
     lifespan=lifespan,
@@ -50,15 +50,7 @@ if settings.all_cors_origins:
         allow_headers=["*"],
         expose_headers=["X-Request-ID"],
     )
-app.add_middleware(DetailLogMiddleware)
-
-configure_sql_logging()
-configure_uvicorn_access_file_logging(
-    log_dir=settings.logs_dir_path,
-    level=logging.INFO,
-    max_bytes=settings.LOG_MAX_BYTES,
-    backup_count=settings.LOG_BACKUP_COUNT,
-)
+app.add_middleware(LoggingMiddleware)
 
 app.mount(
     "/static",

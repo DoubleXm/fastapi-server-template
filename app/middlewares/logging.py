@@ -1,5 +1,4 @@
 import json
-import logging
 import time
 from typing import Any
 from uuid import uuid4
@@ -8,9 +7,8 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.core.config import settings
-from app.core.logging import (
-    configure_app_logger,
+from app.core.logger import (
+    get_logger,
     request_id_context,
 )
 
@@ -97,23 +95,21 @@ def truncate_body_text(body_text: str) -> str:
     return f"{body_text[:MAX_LOG_BODY_CHARS]}...<truncated {omitted_chars} chars>"
 
 
-def configure_request_logging() -> logging.Logger:
-    """配置 app.request logger，供 DetailLogMiddleware 记录 request/response body。"""
-    request_logger = logging.getLogger("app.request")
-    log_level = logging.getLevelName(settings.LOG_LEVEL)
-    return configure_app_logger(
-        request_logger.name,
-        log_dir=settings.logs_dir_path,
-        level=log_level,
-        max_bytes=settings.LOG_MAX_BYTES,
-        backup_count=settings.LOG_BACKUP_COUNT,
-    )
+def format_request_line(request: Request) -> str:
+    """格式化类似 access log 的请求地址和 request line。"""
+    client = request.client
+    client_addr = f"{client.host}:{client.port}" if client else "-"
+    target = request.url.path
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    http_version = request.scope.get("http_version", "1.1")
+    return f'{client_addr} - "{request.method} {target} HTTP/{http_version}"'
 
 
-request_logger = configure_request_logging()
+logger = get_logger()
 
 
-class DetailLogMiddleware(BaseHTTPMiddleware):
+class LoggingMiddleware(BaseHTTPMiddleware):
     """记录 request/response body、耗时和 request_id 的调试中间件。"""
 
     async def dispatch(self, request: Request, call_next):
@@ -127,17 +123,19 @@ class DetailLogMiddleware(BaseHTTPMiddleware):
             return {"type": "http.request", "body": body}
 
         request._receive = receive
-        request_logger.debug(
-            "Request headers: %s",
+        logger.debug(
+            "Request headers: {}",
             sanitize_headers(dict(request.headers)),
         )
 
         if body:
             try:
                 body_str = sanitize_body_text(body.decode("utf-8"))
-                request_logger.debug("Request body: %s", body_str)
+                logger.debug("Request body: {}", body_str)
             except UnicodeDecodeError:
-                request_logger.debug("Request body: <binary> size=%s", len(body))
+                logger.debug("Request body: <binary> size={}", len(body))
+
+        logger.info(format_request_line(request))
 
         try:
             start_time = time.time()
@@ -158,20 +156,20 @@ class DetailLogMiddleware(BaseHTTPMiddleware):
             if response_body:
                 try:
                     body_str = sanitize_body_text(response_body.decode("utf-8"))
-                    request_logger.debug(
-                        "Response body: %s | Duration: %.2fms",
+                    logger.debug(
+                        "Response body: {} | Duration: {:.2f}ms",
                         body_str,
                         duration,
                     )
                 except UnicodeDecodeError:
-                    request_logger.debug(
-                        "Response body: <binary> size=%s | Duration: %.2fms",
+                    logger.debug(
+                        "Response body: <binary> size={} | Duration: {:.2f}ms",
                         len(response_body),
                         duration,
                     )
             else:
-                request_logger.debug(
-                    "Response body: <empty> | Duration: %.2fms",
+                logger.debug(
+                    "Response body: <empty> | Duration: {:.2f}ms",
                     duration,
                 )
 

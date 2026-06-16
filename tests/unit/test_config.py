@@ -24,7 +24,6 @@ def test_settings_keep_database_url_optional() -> None:
     settings = Settings(
         APP_NAME="app",
         APP_ENV="test",
-        DEBUG=False,
         API_V1_PREFIX="/api/v1",
         SECRET_KEY="x" * 32,
         JWT_ALGORITHM="HS256",
@@ -51,7 +50,6 @@ def test_settings_resolve_static_and_log_dirs_from_env_values() -> None:
     settings = Settings(
         APP_NAME="app",
         APP_ENV="test",
-        DEBUG=False,
         API_V1_PREFIX="/api/v1",
         SECRET_KEY="x" * 32,
         JWT_ALGORITHM="HS256",
@@ -82,7 +80,6 @@ def test_settings_keep_absolute_static_and_log_dirs() -> None:
     settings = Settings(
         APP_NAME="app",
         APP_ENV="test",
-        DEBUG=False,
         API_V1_PREFIX="/api/v1",
         SECRET_KEY="x" * 32,
         JWT_ALGORITHM="HS256",
@@ -104,3 +101,29 @@ def test_settings_keep_absolute_static_and_log_dirs() -> None:
 
     assert settings.static_dir_path == static_dir
     assert settings.logs_dir_path == log_dir
+
+
+def test_settings_do_not_expose_debug_alias() -> None:
+    settings = Settings(
+        APP_NAME="app",
+        APP_ENV="local",
+        API_V1_PREFIX="/api/v1",
+        SECRET_KEY="x" * 32,
+        JWT_ALGORITHM="HS256",
+        ACCESS_TOKEN_EXPIRE_MINUTES=60,
+        BACKEND_CORS_ORIGINS=[],
+        LOG_LEVEL="INFO",
+        LOG_MAX_BYTES=1024,
+        LOG_BACKUP_COUNT=1,
+        DB_HOST="127.0.0.1",
+        DB_PORT=3306,
+        DB_USER="user",
+        DB_PASSWORD="password",
+        DB_NAME="app",
+        SQL_ECHO=False,
+        CREATE_DB_TABLES=False,
+        STATIC_DIR="static",
+        LOG_DIR="logs",
+    )
+
+    assert not hasattr(settings, "debug")
