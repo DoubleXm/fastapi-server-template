@@ -14,10 +14,10 @@ from app.core.database import (
     should_create_db_and_tables,
 )
 from app.core.exception_handlers import register_exception_handlers
-from app.core.logger import setup_logging
+from app.core.logger import logger_manager
 from app.middlewares.logging import LoggingMiddleware
 
-setup_logging()
+logger_manager.setup()
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:

@@ -1,16 +1,14 @@
 import json
 import time
 from typing import Any
+from urllib.parse import parse_qsl, quote_plus
 from uuid import uuid4
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.core.logger import (
-    get_logger,
-    request_id_context,
-)
+from app.core.logger import get_logger, request_id_context
 
 MAX_LOG_BODY_CHARS = 1000
 SENSITIVE_BODY_KEYS = {
@@ -26,6 +24,7 @@ SENSITIVE_BODY_KEYS = {
     "token",
     "x-api-key",
 }
+logger = get_logger("app.request")
 
 
 def sanitize_body_text(body_text: str) -> str:
@@ -52,6 +51,20 @@ def sanitize_headers(headers: dict[str, str]) -> str:
         separators=(",", ":"),
         sort_keys=True,
     )
+
+
+def sanitize_query_string(query_string: str) -> str:
+    """清洗 query string 中的敏感参数，避免 token/password 进入 access log。"""
+    sanitized_params = []
+    for key, value in parse_qsl(query_string, keep_blank_values=True):
+        encoded_key = quote_plus(key)
+        encoded_value = (
+            "***"
+            if normalize_sensitive_key(key) in SENSITIVE_BODY_KEYS
+            else quote_plus(value)
+        )
+        sanitized_params.append(f"{encoded_key}={encoded_value}")
+    return "&".join(sanitized_params)
 
 
 def redact_header_value(key: str, value: str) -> str:
@@ -101,12 +114,9 @@ def format_request_line(request: Request) -> str:
     client_addr = f"{client.host}:{client.port}" if client else "-"
     target = request.url.path
     if request.url.query:
-        target = f"{target}?{request.url.query}"
+        target = f"{target}?{sanitize_query_string(request.url.query)}"
     http_version = request.scope.get("http_version", "1.1")
     return f'{client_addr} - "{request.method} {target} HTTP/{http_version}"'
-
-
-logger = get_logger("app.request")
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -116,63 +126,86 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         """缓存 request body 并重建 response，保证日志记录不影响业务处理。"""
         request_id = request.headers.get("X-Request-ID") or uuid4().hex
         request_id_token = request_id_context.set(request_id)
-        # 读取 request body 并缓存，避免日志读取后业务 route 拿不到 body。
+        try:
+            body = await self._read_and_cache_request_body(request)
+            self._log_request(request, body)
+
+            start_time = time.time()
+            response = await call_next(request)
+            duration = (time.time() - start_time) * 1000
+
+            return await self._rebuild_and_log_response(
+                response,
+                request_id=request_id,
+                duration=duration,
+            )
+        finally:
+            request_id_context.reset(request_id_token)
+
+    async def _read_and_cache_request_body(self, request: Request) -> bytes:
+        """读取 request body 后回填 receive，避免 route 读取 body 时为空。"""
         body = await request.body()
 
         async def receive():
             return {"type": "http.request", "body": body}
 
         request._receive = receive
+        return body
+
+    def _log_request(self, request: Request, body: bytes) -> None:
         logger.debug(
             "Request headers: {}",
             sanitize_headers(dict(request.headers)),
         )
 
         if body:
-            try:
-                body_str = sanitize_body_text(body.decode("utf-8"))
-                logger.debug("Request body: {}", body_str)
-            except UnicodeDecodeError:
-                logger.debug("Request body: <binary> size={}", len(body))
+            self._log_body("Request body", body)
 
         logger.info(format_request_line(request))
 
+    async def _rebuild_and_log_response(
+        self,
+        response: Response,
+        *,
+        request_id: str,
+        duration: float,
+    ) -> Response:
+        # BaseHTTPMiddleware 会消费 response iterator，因此记录后需要重建 response。
+        response_body = b"".join([chunk async for chunk in response.body_iterator])
+        new_response = Response(
+            content=response_body,
+            status_code=response.status_code,
+            headers=dict[str, str](response.headers),
+            media_type=response.media_type,
+        )
+        new_response.headers["X-Request-ID"] = request_id
+        self._log_response(response_body, duration)
+        return new_response
+
+    def _log_response(self, body: bytes, duration: float) -> None:
+        if body:
+            self._log_body("Response body", body, duration=duration)
+            return
+
+        logger.debug(
+            "Response body: <empty> | Duration: {:.2f}ms",
+            duration,
+        )
+
+    def _log_body(
+        self,
+        label: str,
+        body: bytes,
+        *,
+        duration: float | None = None,
+    ) -> None:
         try:
-            start_time = time.time()
-            response = await call_next(request)
-            duration = (time.time() - start_time) * 1000
+            body_text = sanitize_body_text(body.decode("utf-8"))
+        except UnicodeDecodeError:
+            body_text = f"<binary> size={len(body)}"
 
-            # BaseHTTPMiddleware 会消费 response iterator，因此记录后需要重建 response。
-            response_body = b""
-            async for chunk in response.body_iterator:
-                response_body += chunk
-            new_response = Response(
-                content=response_body,
-                status_code=response.status_code,
-                headers=dict[str, str](response.headers),
-                media_type=response.media_type,
-            )
-            new_response.headers["X-Request-ID"] = request_id
-            if response_body:
-                try:
-                    body_str = sanitize_body_text(response_body.decode("utf-8"))
-                    logger.debug(
-                        "Response body: {} | Duration: {:.2f}ms",
-                        body_str,
-                        duration,
-                    )
-                except UnicodeDecodeError:
-                    logger.debug(
-                        "Response body: <binary> size={} | Duration: {:.2f}ms",
-                        len(response_body),
-                        duration,
-                    )
-            else:
-                logger.debug(
-                    "Response body: <empty> | Duration: {:.2f}ms",
-                    duration,
-                )
+        if duration is None:
+            logger.debug("{}: {}", label, body_text)
+            return
 
-            return new_response
-        finally:
-            request_id_context.reset(request_id_token)
+        logger.debug("{}: {} | Duration: {:.2f}ms", label, body_text, duration)

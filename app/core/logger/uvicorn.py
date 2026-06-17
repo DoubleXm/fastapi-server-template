@@ -3,8 +3,8 @@ import os
 
 from loguru import logger
 
-# "uvicorn.access"
 _UVICORN_LOGGER_NAMES = ("uvicorn.error", "uvicorn", "uvicorn.asgi")
+_UVICORN_ACCESS_LOGGER_NAME = "uvicorn.access"
 
 
 class InterceptHandler(logging.Handler):
@@ -33,11 +33,9 @@ class InterceptHandler(logging.Handler):
 
 
 def configure_uvicorn_logging() -> None:
-    """配置 Uvicorn 日志共存策略：error 转 Loguru，access 由中间件接管。"""
-
     # 禁用原生 access log 输出
     # INFO:     127.0.0.1:58932 - "POST /api/v1/users/register HTTP/1.1" 409 Conflict
-    access_logger = logging.getLogger("uvicorn.access")
+    access_logger = logging.getLogger(_UVICORN_ACCESS_LOGGER_NAME)
     access_logger.handlers.clear()
     access_logger.propagate = False
     access_logger.disabled = True

@@ -10,13 +10,24 @@ from loguru import logger
 import app.core.logger as logger_core
 import app.middlewares.logging as logging_middleware
 from app.core.database import engine
-from app.core.logger import get_logger, request_id_context, setup_logging
+from app.core.logger import (
+    get_logger,
+    logger_manager,
+    request_id_context,
+    setup_logging,
+)
 from app.core.logger.sqlalchemy import SqlAlchemyHandler
 from app.core.logger.uvicorn import InterceptHandler
 
 
 def test_sql_engine_echo_is_disabled_to_avoid_duplicate_console_logs() -> None:
     assert engine.echo is False
+
+
+def test_logger_package_exposes_singleton_manager() -> None:
+    assert setup_logging == logger_manager.setup
+    assert get_logger == logger_manager.get_logger
+    assert logger_manager.normalize_level(logging.DEBUG) == "DEBUG"
 
 
 def test_get_logger_uses_explicit_name_when_provided(tmp_path: Path) -> None:

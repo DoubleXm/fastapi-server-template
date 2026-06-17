@@ -146,6 +146,35 @@ def test_detail_log_middleware_redacts_authorization_without_scheme(
     assert "raw-secret-token" not in combined
 
 
+def test_detail_log_middleware_redacts_sensitive_query_params(monkeypatch) -> None:
+    records: list[str] = []
+
+    class CapturingLogger:
+        def debug(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+        def info(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
+
+    app = FastAPI()
+    app.add_middleware(LoggingMiddleware)
+
+    @app.get("/search")
+    async def search() -> dict[str, str]:
+        return {"status": "ok"}
+
+    client = TestClient(app)
+
+    response = client.get("/search?q=alice&token=secret-token")
+
+    assert response.status_code == 200
+    combined = "\n".join(records)
+    assert "GET /search?q=alice&token=*** HTTP/1.1" in combined
+    assert "secret-token" not in combined
+
+
 def test_detail_log_middleware_keeps_nested_authorization_scheme(monkeypatch) -> None:
     records: list[str] = []
 
