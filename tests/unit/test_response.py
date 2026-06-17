@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.testclient import TestClient
 
+import app.core.exception_handlers as exception_handlers
 from app.api.deps import PaginationParams
 from app.api.schemas import ApiResponse, ApiSchema
 from app.api.v1.users.schemas import UserPublic
@@ -149,6 +150,33 @@ def test_exception_handlers_use_unified_response_shape() -> None:
     assert validation_response.json()["code"] == 422
     assert validation_response.json()["message"] == "Request validation failed"
     assert "errors" in validation_response.json()["data"]
+
+
+def test_global_exception_handler_logs_traceback_context(monkeypatch) -> None:
+    records: list[str] = []
+
+    class CapturingLogger:
+        def exception(self, message, *args) -> None:
+            records.append(message.format(*args))
+
+    monkeypatch.setattr(exception_handlers, "logger", CapturingLogger())
+
+    app = FastAPI(debug=False)
+    register_exception_handlers(app)
+
+    @app.get("/error")
+    def error() -> None:
+        raise RuntimeError("boom")
+
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.get("/error")
+
+    assert response.status_code == 500
+    assert response.json()["message"] == "Internal server error"
+    assert records == [
+        "Unhandled exception method=GET path=/error error=boom",
+    ]
 
 
 def test_pagination_params_use_page_num_and_page_size() -> None:

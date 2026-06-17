@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.responses import StreamingResponse
 
 import app.middlewares.logging as logging_middleware
 from app.middlewares.logging import LoggingMiddleware
@@ -63,8 +65,8 @@ def test_detail_log_middleware_logs_bodies_at_debug_level(
     assert records
     assert [level for level, _ in records] == [
         logging.DEBUG,
-        logging.DEBUG,
         logging.INFO,
+        logging.DEBUG,
         logging.DEBUG,
     ]
     assert any("Request headers" in message for _, message in records)
@@ -76,7 +78,7 @@ def test_detail_log_middleware_logs_bodies_at_debug_level(
     assert any("Response body" in message for _, message in records)
 
 
-def test_detail_log_middleware_logs_request_headers_with_redaction(
+def test_detail_log_middleware_logs_only_allowlisted_request_headers(
     monkeypatch,
 ) -> None:
     records: list[str] = []
@@ -110,43 +112,13 @@ def test_detail_log_middleware_logs_request_headers_with_redaction(
     assert response.status_code == 200
     combined = "\n".join(records)
     assert "Request headers" in combined
-    assert '"authorization":"Bearer ***"' in combined
-    assert '"x-client-version":"1.2.3"' in combined
-    assert "secret-token" not in combined
+    assert '"host":"testserver"' in combined
+    assert '"user-agent":"testclient"' in combined
+    assert '"authorization":"Bearer secret-token"' in combined
+    assert "x-client-version" not in combined
 
 
-def test_detail_log_middleware_redacts_authorization_without_scheme(
-    monkeypatch,
-) -> None:
-    records: list[str] = []
-
-    class CapturingLogger:
-        def debug(self, message, *args) -> None:
-            records.append(render_loguru_message(message, *args))
-
-        def info(self, message, *args) -> None:
-            records.append(render_loguru_message(message, *args))
-
-    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
-
-    app = FastAPI()
-    app.add_middleware(LoggingMiddleware)
-
-    @app.get("/headers")
-    async def headers() -> dict[str, str]:
-        return {"status": "ok"}
-
-    client = TestClient(app)
-
-    response = client.get("/headers", headers={"Authorization": "raw-secret-token"})
-
-    assert response.status_code == 200
-    combined = "\n".join(records)
-    assert '"authorization":"***"' in combined
-    assert "raw-secret-token" not in combined
-
-
-def test_detail_log_middleware_redacts_sensitive_query_params(monkeypatch) -> None:
+def test_detail_log_middleware_logs_query_params_without_redaction(monkeypatch) -> None:
     records: list[str] = []
 
     class CapturingLogger:
@@ -171,43 +143,12 @@ def test_detail_log_middleware_redacts_sensitive_query_params(monkeypatch) -> No
 
     assert response.status_code == 200
     combined = "\n".join(records)
-    assert "GET /search?q=alice&token=*** HTTP/1.1" in combined
-    assert "secret-token" not in combined
+    assert "GET /search?q=alice&token=secret-token HTTP/1.1" in combined
 
 
-def test_detail_log_middleware_keeps_nested_authorization_scheme(monkeypatch) -> None:
-    records: list[str] = []
-
-    class CapturingLogger:
-        def debug(self, message, *args) -> None:
-            records.append(render_loguru_message(message, *args))
-
-        def info(self, message, *args) -> None:
-            records.append(render_loguru_message(message, *args))
-
-    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
-
-    app = FastAPI()
-    app.add_middleware(LoggingMiddleware)
-
-    @app.get("/headers")
-    async def headers() -> dict[str, str]:
-        return {"status": "ok"}
-
-    client = TestClient(app)
-
-    response = client.get(
-        "/headers",
-        headers={"Authorization": "Bearer Bearer secret-token"},
-    )
-
-    assert response.status_code == 200
-    combined = "\n".join(records)
-    assert '"authorization":"Bearer Bearer ***"' in combined
-    assert "secret-token" not in combined
-
-
-def test_detail_log_middleware_redacts_sensitive_body_fields(monkeypatch) -> None:
+def test_detail_log_middleware_logs_sensitive_body_fields_without_redaction(
+    monkeypatch,
+) -> None:
     records: list[str] = []
 
     class CapturingLogger:
@@ -238,39 +179,10 @@ def test_detail_log_middleware_redacts_sensitive_body_fields(monkeypatch) -> Non
 
     assert response.status_code == 200
     combined = "\n".join(records)
-    assert "secret123" not in combined
-    assert "secret-token" not in combined
-    assert '"password":"***"' in combined
-    assert '"access_token":"***"' in combined
-
-
-def test_detail_log_middleware_redacts_camel_case_access_token(monkeypatch) -> None:
-    records: list[str] = []
-
-    class CapturingLogger:
-        def debug(self, message, *args) -> None:
-            records.append(render_loguru_message(message, *args))
-
-        def info(self, message, *args) -> None:
-            records.append(render_loguru_message(message, *args))
-
-    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
-
-    app = FastAPI()
-    app.add_middleware(LoggingMiddleware)
-
-    @app.get("/auth")
-    async def auth() -> dict[str, str]:
-        return {"token": "secret-token"}
-
-    client = TestClient(app)
-
-    response = client.get("/auth")
-
-    assert response.status_code == 200
-    combined = "\n".join(records)
-    assert "secret-token" not in combined
-    assert '"token":"***"' in combined
+    assert "secret123" in combined
+    assert "secret-token" in combined
+    assert '"password":"secret123"' in combined
+    assert '"access_token":"secret-token"' in combined
 
 
 def test_detail_log_middleware_truncates_large_bodies(monkeypatch) -> None:
@@ -300,3 +212,73 @@ def test_detail_log_middleware_truncates_large_bodies(monkeypatch) -> None:
     assert response.status_code == 200
     assert any("<truncated" in message for message in records)
     assert all(len(message) < 1500 for message in records)
+
+
+def test_detail_log_middleware_skips_multipart_request_body(monkeypatch) -> None:
+    records: list[str] = []
+
+    class CapturingLogger:
+        def debug(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+        def info(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
+
+    app = FastAPI()
+    app.add_middleware(LoggingMiddleware)
+
+    @app.post("/upload")
+    async def upload() -> dict[str, str]:
+        return {"status": "ok"}
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/upload",
+        files={"file": ("demo.txt", b"file-secret-content", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    combined = "\n".join(records)
+    assert "Request body: <multipart skipped>" in combined
+    assert "file-secret-content" not in combined
+
+
+def test_detail_log_middleware_does_not_buffer_streaming_response(
+    monkeypatch,
+) -> None:
+    records: list[str] = []
+
+    class CapturingLogger:
+        def debug(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+        def info(self, message, *args) -> None:
+            records.append(render_loguru_message(message, *args))
+
+    monkeypatch.setattr(logging_middleware, "logger", CapturingLogger())
+
+    app = FastAPI()
+    app.add_middleware(LoggingMiddleware)
+
+    def stream() -> Iterator[bytes]:
+        yield b"first\n"
+        yield b"second\n"
+
+    @app.get("/stream")
+    async def streaming() -> StreamingResponse:
+        return StreamingResponse(stream(), media_type="text/event-stream")
+
+    client = TestClient(app)
+
+    with client.stream("GET", "/stream") as response:
+        assert response.status_code == 200
+        assert response.headers["X-Request-ID"]
+        assert list(response.iter_text()) == ["first\nsecond\n"]
+
+    combined = "\n".join(records)
+    assert "Response body: <streaming skipped>" in combined
+    assert "first" not in combined
+    assert "second" not in combined

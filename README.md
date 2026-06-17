@@ -20,7 +20,7 @@
 │   ├── shared/                  # 跨层复用工具、常量、安全方法
 │   └── main.py                  # FastAPI app 创建和中间件/router 注册
 ├── tests/                       # 单元测试和接口行为测试
-├── migrations/                  # Alembic 数据库迁移脚本
+├── alembic/                     # Alembic 数据库迁移脚本
 ├── static/                      # 静态资源目录
 ├── logs/                        # 本地日志输出目录
 ├── .env                         # 本地环境配置

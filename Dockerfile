@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --no-dev --no-install-project
 
 COPY app ./app
-COPY migrations ./migrations
+COPY alembic ./alembic
 COPY static ./static
 COPY alembic.ini ./
 

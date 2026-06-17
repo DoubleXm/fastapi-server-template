@@ -1,103 +1,47 @@
 import json
 import time
-from typing import Any
-from urllib.parse import parse_qsl, quote_plus
 from uuid import uuid4
 
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.logger import get_logger, request_id_context
 
+# request/response body 日志最多采样的字符数。
 MAX_LOG_BODY_CHARS = 1000
-SENSITIVE_BODY_KEYS = {
-    "access_token",
-    "accesstoken",
+# request header 白名单字段，避免默认输出过多无关 header。
+LOGGED_HEADER_NAMES = {
     "authorization",
-    "cookie",
-    "password",
-    "refresh_token",
-    "refreshtoken",
-    "set-cookie",
-    "secret",
-    "token",
-    "x-api-key",
+    "content-length",
+    "content-type",
+    "host",
+    "user-agent",
+    "x-forwarded-for",
+    "x-real-ip",
+    "x-request-id",
 }
+# 跳过 request body 采样的 content-type。
+SKIPPED_REQUEST_BODY_CONTENT_TYPES = {"multipart/form-data"}
+# 跳过 response body 采样的 content-type。
+SKIPPED_RESPONSE_BODY_CONTENT_TYPES = {"application/octet-stream", "text/event-stream"}
+
 logger = get_logger("app.request")
 
 
-def sanitize_body_text(body_text: str) -> str:
-    """清洗可打印 body：JSON 做脱敏和压缩，非 JSON 只做长度截断。"""
+def format_body_text(body: bytes) -> str:
+    """格式化可打印 body：JSON 压缩展示，其他文本只做长度截断。"""
+    try:
+        body_text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return f"<binary> size={len(body)}"
+
     try:
         parsed_body = json.loads(body_text)
     except json.JSONDecodeError:
         return truncate_body_text(body_text)
 
-    # 只对 JSON 做 field-level redaction；plain text 不猜测内容，避免误伤可读性。
-    sanitized_body = redact_sensitive_values(parsed_body)
-    compact_body = json.dumps(sanitized_body, ensure_ascii=False, separators=(",", ":"))
+    compact_body = json.dumps(parsed_body, ensure_ascii=False, separators=(",", ":"))
     return truncate_body_text(compact_body)
-
-
-def sanitize_headers(headers: dict[str, str]) -> str:
-    """清洗 request headers，保留排查所需信息但隐藏认证和 cookie。"""
-    sanitized_headers = {
-        key.lower(): redact_header_value(key, value) for key, value in headers.items()
-    }
-    return json.dumps(
-        sanitized_headers,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def sanitize_query_string(query_string: str) -> str:
-    """清洗 query string 中的敏感参数，避免 token/password 进入 access log。"""
-    sanitized_params = []
-    for key, value in parse_qsl(query_string, keep_blank_values=True):
-        encoded_key = quote_plus(key)
-        encoded_value = (
-            "***"
-            if normalize_sensitive_key(key) in SENSITIVE_BODY_KEYS
-            else quote_plus(value)
-        )
-        sanitized_params.append(f"{encoded_key}={encoded_value}")
-    return "&".join(sanitized_params)
-
-
-def redact_header_value(key: str, value: str) -> str:
-    """Authorization 保留 scheme，其他敏感 header 直接隐藏。"""
-    lowered_key = key.lower()
-    if lowered_key == "authorization":
-        parts = value.split()
-        if len(parts) <= 1:
-            return "***"
-        return f"{' '.join(parts[:-1])} ***"
-    if lowered_key in SENSITIVE_BODY_KEYS:
-        return "***"
-    return value
-
-
-def redact_sensitive_values(value: Any) -> Any:
-    """递归脱敏 dict/list 中的敏感字段，避免 password/token 进入日志。"""
-    if isinstance(value, dict):
-        return {
-            key: (
-                "***"
-                if normalize_sensitive_key(key) in SENSITIVE_BODY_KEYS
-                else redact_sensitive_values(item)
-            )
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [redact_sensitive_values(item) for item in value]
-    return value
-
-
-def normalize_sensitive_key(key: str) -> str:
-    return key.lower().replace("_", "").replace("-", "")
 
 
 def truncate_body_text(body_text: str) -> str:
@@ -108,104 +52,181 @@ def truncate_body_text(body_text: str) -> str:
     return f"{body_text[:MAX_LOG_BODY_CHARS]}...<truncated {omitted_chars} chars>"
 
 
-def format_request_line(request: Request) -> str:
+def format_headers(scope: Scope) -> str:
+    headers = {}
+    for key, value in scope["headers"]:
+        header_name = key.decode("latin-1").lower()
+        if header_name in LOGGED_HEADER_NAMES:
+            headers[header_name] = value.decode("latin-1")
+    return json.dumps(
+        headers,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def format_request_line(scope: Scope) -> str:
     """格式化类似 access log 的请求地址和 request line。"""
-    client = request.client
-    client_addr = f"{client.host}:{client.port}" if client else "-"
-    target = request.url.path
-    if request.url.query:
-        target = f"{target}?{sanitize_query_string(request.url.query)}"
-    http_version = request.scope.get("http_version", "1.1")
-    return f'{client_addr} - "{request.method} {target} HTTP/{http_version}"'
+    client = scope.get("client")
+    client_addr = f"{client[0]}:{client[1]}" if client else "-"
+    target = scope["path"]
+    query_string = scope.get("query_string", b"").decode("latin-1")
+    if query_string:
+        target = f"{target}?{query_string}"
+    http_version = scope.get("http_version", "1.1")
+    return f'{client_addr} - "{scope["method"]} {target} HTTP/{http_version}"'
 
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    """记录 request/response body、耗时和 request_id 的调试中间件。"""
+def should_log_response_body(headers: MutableHeaders) -> bool:
+    # 流式响应和附件不读取 body，避免阻塞 SSE 或把文件内容写入内存。
+    content_disposition = headers.get("content-disposition", "")
+    if "attachment" in content_disposition.lower():
+        return False
 
-    async def dispatch(self, request: Request, call_next):
-        """缓存 request body 并重建 response，保证日志记录不影响业务处理。"""
-        request_id = request.headers.get("X-Request-ID") or uuid4().hex
+    content_type = headers.get("content-type", "").split(";", maxsplit=1)[0].lower()
+    if content_type in SKIPPED_RESPONSE_BODY_CONTENT_TYPES:
+        return False
+
+    return "content-length" in headers
+
+
+def should_log_request_body(scope: Scope) -> bool:
+    headers = MutableHeaders(scope=scope)
+    content_type = headers.get("content-type", "").split(";", maxsplit=1)[0].lower()
+    return content_type not in SKIPPED_REQUEST_BODY_CONTENT_TYPES
+
+
+class BodySampler:
+    """只采样前 N 字节，避免日志中间件缓存完整大 body。"""
+
+    def __init__(
+        self,
+        max_chars: int = MAX_LOG_BODY_CHARS,
+    ) -> None:
+        self.max_bytes = max_chars
+        self.body = bytearray()
+        self.total_size = 0
+        self.truncated = False
+
+    def append(self, chunk: bytes) -> None:
+        if not chunk:
+            return
+
+        self.total_size += len(chunk)
+        remaining_bytes = self.max_bytes - len(self.body)
+        if remaining_bytes > 0:
+            self.body.extend(chunk[:remaining_bytes])
+        if len(chunk) > remaining_bytes:
+            self.truncated = True
+
+    def text(self) -> str:
+        body_text = format_body_text(bytes(self.body))
+        if not self.truncated:
+            return body_text
+        omitted_chars = max(self.total_size - len(self.body), 0)
+        return f"{body_text}...<truncated {omitted_chars} chars>"
+
+
+class LoggingMiddleware:
+    """记录 request/response body、耗时和 request_id 的 ASGI 中间件。"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request_id = self._get_request_id(scope)
         request_id_token = request_id_context.set(request_id)
+        start_time = time.time()
+        request_sampler = BodySampler()
+        response_sampler = BodySampler()
+        should_log_request_body_content = should_log_request_body(scope)
+        should_log_body = True
+        request_body_logged = False
+
+        logger.debug("Request headers: {}", format_headers(scope))
+        logger.info(format_request_line(scope))
+        if not should_log_request_body_content:
+            logger.debug("Request body: <multipart skipped>")
+            request_body_logged = True
+
+        async def logging_receive() -> Message:
+            nonlocal request_body_logged
+
+            # 包装 receive：业务读取 request body 时顺手采样，不提前消费请求流。
+            message = await receive()
+            if message["type"] != "http.request":
+                return message
+
+            body = message.get("body", b"")
+            if should_log_request_body_content:
+                request_sampler.append(body)
+
+            if (
+                should_log_request_body_content
+                and not message.get("more_body", False)
+                and request_sampler.total_size
+            ):
+                logger.debug("Request body: {}", request_sampler.text())
+                request_body_logged = True
+
+            return message
+
+        async def logging_send(message: Message) -> None:
+            nonlocal should_log_body
+
+            # 包装 send：在 response start 阶段补 request_id，并判断是否记录 body。
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Request-ID"] = request_id
+                should_log_body = should_log_response_body(headers)
+
+            if message["type"] == "http.response.body":
+                body = message.get("body", b"")
+                more_body = message.get("more_body", False)
+                if should_log_body:
+                    response_sampler.append(body)
+                if not more_body:
+                    duration = (time.time() - start_time) * 1000
+                    self._log_response_body(
+                        response_sampler,
+                        duration=duration,
+                        should_log_body=should_log_body,
+                    )
+
+            await send(message)
+
         try:
-            body = await self._read_and_cache_request_body(request)
-            self._log_request(request, body)
-
-            start_time = time.time()
-            response = await call_next(request)
-            duration = (time.time() - start_time) * 1000
-
-            return await self._rebuild_and_log_response(
-                response,
-                request_id=request_id,
-                duration=duration,
-            )
+            await self.app(scope, logging_receive, logging_send)
         finally:
+            # 某些 endpoint 不读取 request body，finally 里兜底输出已采样内容。
+            if request_sampler.total_size and not request_body_logged:
+                logger.debug("Request body: {}", request_sampler.text())
             request_id_context.reset(request_id_token)
 
-    async def _read_and_cache_request_body(self, request: Request) -> bytes:
-        """读取 request body 后回填 receive，避免 route 读取 body 时为空。"""
-        body = await request.body()
+    def _get_request_id(self, scope: Scope) -> str:
+        for key, value in scope["headers"]:
+            if key.lower() == b"x-request-id":
+                return value.decode("latin-1")
+        return uuid4().hex
 
-        async def receive():
-            return {"type": "http.request", "body": body}
-
-        request._receive = receive
-        return body
-
-    def _log_request(self, request: Request, body: bytes) -> None:
-        logger.debug(
-            "Request headers: {}",
-            sanitize_headers(dict(request.headers)),
-        )
-
-        if body:
-            self._log_body("Request body", body)
-
-        logger.info(format_request_line(request))
-
-    async def _rebuild_and_log_response(
-        self,
-        response: Response,
-        *,
-        request_id: str,
-        duration: float,
-    ) -> Response:
-        # BaseHTTPMiddleware 会消费 response iterator，因此记录后需要重建 response。
-        response_body = b"".join([chunk async for chunk in response.body_iterator])
-        new_response = Response(
-            content=response_body,
-            status_code=response.status_code,
-            headers=dict[str, str](response.headers),
-            media_type=response.media_type,
-        )
-        new_response.headers["X-Request-ID"] = request_id
-        self._log_response(response_body, duration)
-        return new_response
-
-    def _log_response(self, body: bytes, duration: float) -> None:
-        if body:
-            self._log_body("Response body", body, duration=duration)
-            return
-
-        logger.debug(
-            "Response body: <empty> | Duration: {:.2f}ms",
-            duration,
-        )
-
-    def _log_body(
-        self,
-        label: str,
-        body: bytes,
-        *,
-        duration: float | None = None,
+    def _log_response_body(
+        self, sampler: BodySampler, *, duration: float, should_log_body: bool
     ) -> None:
-        try:
-            body_text = sanitize_body_text(body.decode("utf-8"))
-        except UnicodeDecodeError:
-            body_text = f"<binary> size={len(body)}"
-
-        if duration is None:
-            logger.debug("{}: {}", label, body_text)
+        if not should_log_body:
+            logger.debug(
+                "Response body: <streaming skipped> | Duration: {:.2f}ms", duration
+            )
             return
 
-        logger.debug("{}: {} | Duration: {:.2f}ms", label, body_text, duration)
+        if sampler.total_size:
+            logger.debug(
+                "Response body: {} | Duration: {:.2f}ms", sampler.text(), duration
+            )
+            return
+
+        logger.debug("Response body: <empty> | Duration: {:.2f}ms", duration)

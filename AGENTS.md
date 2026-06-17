@@ -29,7 +29,7 @@ app/
 │   └── logging.py
 ├── middlewares/          # request/response 日志中间件
 └── shared/               # 轻框架依赖的工具、常量、安全方法
-migrations/               # Alembic 数据库迁移脚本
+alembic/                  # Alembic 数据库迁移脚本
 ```
 
 新增 API 模块时，优先复用现有按业务域组织的结构：
@@ -162,7 +162,7 @@ created_at: datetime = Field(
 
 数据库 schema 变更统一通过 Alembic 管理，不依赖应用启动时隐式改表。
 
-- 新增或修改 SQLModel table 后，必须同步新增或更新 `migrations/versions/` 下的迁移文件。
+- 新增或修改 SQLModel table 后，必须同步新增或更新 `alembic/versions/` 下的迁移文件。
 - 生成迁移使用 `uv run alembic revision --autogenerate -m "message"`。
 - 执行迁移使用 `uv run alembic upgrade head`。
 - 回滚验证使用 `uv run alembic downgrade -1`，必要时再 `upgrade head` 回到最新版本。
