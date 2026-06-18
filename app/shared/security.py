@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -18,6 +19,16 @@ password_hash = PasswordHash((Argon2Hasher(), BcryptHasher()))
 def token_fingerprint(token: str) -> str:
     """生成短指纹用于日志关联 token，不记录 token 原文。"""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+
+
+def create_refresh_token() -> str:
+    """创建不透明 refresh token；数据库只保存 hash。"""
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    """生成 refresh token 哈希，用于数据库查询和存储。"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def get_password_hash(password: str) -> str:

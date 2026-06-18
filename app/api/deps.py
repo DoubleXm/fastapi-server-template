@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Query, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from sqlmodel import Session
+from starlette.requests import Request
 
 from app.api.v1.users.models import User
 from app.core.database import get_db
@@ -88,3 +89,9 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Security(get_current_user)]
+
+
+def get_client_ip(request: Request) -> str | None:
+    if request.client is None:
+        return None
+    return request.client.host

@@ -7,7 +7,7 @@ from app.api.v1.users.schemas import UserCreate, UserUpdate
 from app.api.v1.users.service import (
     create_user,
     delete_user,
-    get_user_or_404,
+    get_user,
     list_users,
     update_user,
 )
@@ -56,16 +56,16 @@ def test_update_and_delete_user(db_session) -> None:
 
     updated = update_user(
         db_session,
-        user=user,
+        user_id=user.id,
         payload=UserUpdate(username="alice-updated", password="changed456"),
     )
 
     assert updated.username == "alice-updated"
 
-    persisted = get_user_or_404(db_session, updated.id)
-    delete_user(db_session, user=persisted)
+    persisted = get_user(db_session, updated.id)
+    delete_user(db_session, user_id=persisted.id)
 
     with pytest.raises(HTTPException) as exc_info:
-        get_user_or_404(db_session, updated.id)
+        get_user(db_session, updated.id)
 
     assert exc_info.value.status_code == 404

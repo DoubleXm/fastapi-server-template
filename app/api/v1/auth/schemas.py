@@ -18,6 +18,15 @@ class AuthLogin(ApiSchema):
     password: str = Field(..., min_length=6, max_length=128)
 
 
-class AuthPayload(ApiSchema):
+class AuthRefresh(ApiSchema):
+    refresh_token: str = Field(..., min_length=1)
+
+
+class AuthLogoutRes(ApiSchema):
+    revoked: bool
+
+
+class AuthRes(ApiSchema):
     token: str
+    refresh_token: str
     user: UserPublic

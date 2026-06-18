@@ -12,7 +12,7 @@ from app.api.v1.users.schemas import UserPublic
 from app.core.exception_handlers import register_exception_handlers
 
 
-class CamelCasePayload(ApiSchema):
+class CamelCaseSchema(ApiSchema):
     created_at: str
     is_active: bool
     display_name: str
@@ -28,7 +28,7 @@ def test_success_response_contains_data() -> None:
 
 
 def test_api_schema_outputs_camel_case_and_keeps_python_fields() -> None:
-    payload = CamelCasePayload.model_validate(
+    payload = CamelCaseSchema.model_validate(
         {
             "createdAt": "2026-05-29T00:00:00Z",
             "isActive": True,
@@ -45,7 +45,7 @@ def test_api_schema_outputs_camel_case_and_keeps_python_fields() -> None:
 
 
 def test_api_response_serializes_nested_schema_with_camel_case() -> None:
-    payload = CamelCasePayload(
+    payload = CamelCaseSchema(
         created_at="2026-05-29T00:00:00Z",
         is_active=True,
         display_name="Alice",
@@ -77,9 +77,7 @@ def test_nested_route_response_uses_camel_case_fields() -> None:
                 "updated_at": "2026-05-29T00:00:00Z",
             }
         )
-        return ApiResponse.success(
-            data=user.model_dump(mode="json", by_alias=True),
-        )
+        return ApiResponse.success(data=user)
 
     client = TestClient(app)
 

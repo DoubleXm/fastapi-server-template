@@ -180,6 +180,7 @@ created_at: datetime = Field(
 - 外部 API 输入/输出使用 lowerCamelCase。
 - Python 内部字段保持 snake_case。
 - Create / Update / Public schema 分开定义。
+- Response 专用 schema 使用 `Res` 后缀，避免 `Payload` 同时指代 request 和 response。
 - 当 Create / Update / Public 之间存在稳定共享字段时，可以抽出 `<Module>Base` 复用字段定义；base 通常继承 `ApiSchema`，具体 schema 再继承 base。不要为了偶然重复的少量字段过度抽象。
 - Update schema 字段一般为可选，并在 service 中使用 `model_dump(exclude_unset=True)`。
 - `description` 只给枚举、开关、状态和难理解字段使用。
@@ -222,6 +223,8 @@ def list_items(session: Session, *, skip: int, limit: int) -> tuple[list[Item], 
 
 service 负责业务规则、校验和 HTTP 异常，不负责 FastAPI response envelope。
 
+router 方法和 service 方法应尽量按业务动作一一对应，例如 `router.login -> service.login`、`router.refresh -> service.refresh`。多个 endpoint 共享的底层逻辑可以提取为 service 内部私有 helper，但不要让 router 直接拼接多个 service 方法来表达一个完整业务流程。
+
 推荐模式：
 
 ```python
@@ -248,9 +251,12 @@ router 只处理 HTTP 层：
 - 声明路径、依赖、状态码和 response model。
 - 调用 service。
 - 使用 `ApiResponse.success(...)` 统一返回。
+- HTTP status code 遵循 RESTful CRUD 语义：创建资源使用 `201 Created`；查询、更新、动作类接口使用 `200 OK`；当前模板的删除接口仍返回统一 response body，因此使用 `200 OK`。
+- 业务 schema 可以直接传给 `ApiResponse.success(data=...)`；`ApiResponse.success` 负责递归 JSON 编码和 alias 输出，不要在 router 中手动 `.model_dump(mode="json", by_alias=True)`。
 - 不在 router 中写数据库查询。
 - 不写无用的 `request: Request` 参数。
 - 不添加无意义的 `summary`。
+- request/client 信息提取等 API 层工具优先放在 `app/api/deps.py` 或 router 私有 helper；通用时间、字符串、hash 等轻框架工具放在 `app/shared`，不要塞进业务 service。
 
 列表接口使用 `PaginationDep`，返回 `data + total`：
 

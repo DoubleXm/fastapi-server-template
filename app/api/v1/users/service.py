@@ -17,7 +17,11 @@ def list_users(session: Session, *, offset: int, limit: int) -> tuple[list[User]
     )
 
 
-def get_user_or_404(session: Session, user_id: int) -> User:
+def get_user(session: Session, user_id: int) -> User:
+    return _get_user_or_404(session, user_id)
+
+
+def _get_user_or_404(session: Session, user_id: int) -> User:
     user = repository.get_user_by_id(session, user_id)
     if user is None:
         raise HTTPException(
@@ -42,9 +46,10 @@ def create_user(session: Session, payload: UserCreate) -> User:
 def update_user(
     session: Session,
     *,
-    user: User,
+    user_id: int,
     payload: UserUpdate,
 ) -> User:
+    user = _get_user_or_404(session, user_id)
     updates: dict[str, str] = {}
 
     if payload.username and payload.username != user.username:
@@ -65,5 +70,6 @@ def update_user(
     return repository.update_user(session, user=user, updates=updates)
 
 
-def delete_user(session: Session, *, user: User) -> None:
+def delete_user(session: Session, *, user_id: int) -> None:
+    user = _get_user_or_404(session, user_id)
     repository.delete_user(session, user=user)

@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
+import app.api.v1.auth.models  # noqa: F401
 import app.api.v1.users.models  # noqa: F401
 
 

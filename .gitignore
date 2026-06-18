@@ -17,6 +17,7 @@ test.db
 .env
 .env.prod
 .env.local
+.env.test
 .env.*.local
 
 logs/

@@ -4,14 +4,21 @@ from datetime import timedelta
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlmodel import select
 
 from app.api.deps import get_db
+from app.api.v1.auth.models import RefreshSession
 from app.api.v1.auth.router import router as auth_router
 from app.api.v1.users.router import router as users_router
 from app.api.v1.users.schemas import UserCreate
 from app.api.v1.users.service import create_user
 from app.core.exception_handlers import register_exception_handlers
-from app.shared.security import create_access_token, decode_access_token
+from app.shared.enum import RefreshSessionRevokeReason
+from app.shared.security import (
+    create_access_token,
+    decode_access_token,
+    hash_refresh_token,
+)
 
 
 def create_test_app(db_session, *, with_exception_handlers: bool = False) -> FastAPI:
@@ -38,6 +45,7 @@ def test_login_returns_token_in_data_without_authorization_header(db_session) ->
     assert response.status_code == 200
     assert "Authorization" not in response.headers
     assert response.json()["data"]["token"]
+    assert response.json()["data"]["refreshToken"]
     assert "accessToken" not in response.json()["data"]
     assert "tokenType" not in response.json()["data"]
     assert "expiresIn" not in response.json()["data"]
@@ -92,6 +100,7 @@ def test_register_returns_body_token_without_authorization_header(db_session) ->
     assert response.status_code == 201
     assert "Authorization" not in response.headers
     assert response.json()["data"]["token"]
+    assert response.json()["data"]["refreshToken"]
     assert "accessToken" not in response.json()["data"]
     assert "tokenType" not in response.json()["data"]
     assert "expiresIn" not in response.json()["data"]
@@ -109,6 +118,145 @@ def test_create_user_requires_authentication(db_session) -> None:
 
     assert response.status_code == 401
     assert response.json()["message"] == "Authentication required"
+
+
+def test_refresh_token_rotates_session_and_returns_new_tokens(db_session) -> None:
+    create_user(db_session, UserCreate(username="alice", password="secret123"))
+
+    app = create_test_app(db_session)
+    client = TestClient(app)
+
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret123"},
+    )
+    old_refresh_token = login_response.json()["data"]["refreshToken"]
+    refresh_response = client.post(
+        "/auth/refresh",
+        json={"refreshToken": old_refresh_token},
+    )
+
+    assert refresh_response.status_code == 200
+    assert refresh_response.json()["data"]["token"]
+    assert refresh_response.json()["data"]["refreshToken"] != old_refresh_token
+    assert refresh_response.json()["data"]["user"]["username"] == "alice"
+
+    refresh_session = db_session.get(RefreshSession, 1)
+    assert refresh_session.previous_token_hash == hash_refresh_token(old_refresh_token)
+    assert refresh_session.current_token_hash == hash_refresh_token(
+        refresh_response.json()["data"]["refreshToken"]
+    )
+    assert refresh_session.revoked_at is None
+    assert refresh_session.revoke_reason is None
+
+
+def test_reused_previous_refresh_token_revokes_current_session(db_session) -> None:
+    create_user(db_session, UserCreate(username="alice", password="secret123"))
+
+    app = create_test_app(db_session, with_exception_handlers=True)
+    client = TestClient(app)
+
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret123"},
+    )
+    old_refresh_token = login_response.json()["data"]["refreshToken"]
+    client.post(
+        "/auth/refresh",
+        json={"refreshToken": old_refresh_token},
+    )
+    reuse_response = client.post(
+        "/auth/refresh",
+        json={"refreshToken": old_refresh_token},
+    )
+
+    assert reuse_response.status_code == 401
+    assert reuse_response.json()["message"] == "Refresh token reuse detected"
+
+    refresh_session = db_session.get(RefreshSession, 1)
+    assert refresh_session.revoked_at is not None
+    assert refresh_session.revoke_reason == RefreshSessionRevokeReason.TOKEN_REUSE
+
+
+def test_logout_revokes_current_refresh_session(db_session) -> None:
+    create_user(db_session, UserCreate(username="alice", password="secret123"))
+
+    app = create_test_app(db_session)
+    client = TestClient(app)
+
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret123"},
+    )
+    logout_response = client.post(
+        "/auth/logout",
+        headers={"Authorization": f"Bearer {login_response.json()['data']['token']}"},
+    )
+
+    assert logout_response.status_code == 200
+    assert logout_response.json()["data"] == {"revoked": True}
+
+    refresh_session = db_session.get(RefreshSession, 1)
+    assert refresh_session.revoked_at is not None
+    assert refresh_session.revoke_reason == RefreshSessionRevokeReason.LOGOUT
+
+
+def test_logout_requires_authentication(db_session) -> None:
+    app = create_test_app(db_session, with_exception_handlers=True)
+    client = TestClient(app)
+
+    response = client.post("/auth/logout")
+
+    assert response.status_code == 401
+    assert response.json()["message"] == "Authentication required"
+
+
+def test_login_replaces_existing_active_refresh_session(db_session) -> None:
+    create_user(db_session, UserCreate(username="alice", password="secret123"))
+
+    app = create_test_app(db_session)
+    client = TestClient(app)
+
+    client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret123"},
+    )
+    second_login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret123"},
+    )
+
+    refresh_sessions = db_session.exec(select(RefreshSession)).all()
+    assert len(refresh_sessions) == 2
+    assert refresh_sessions[0].revoked_at is not None
+    assert (
+        refresh_sessions[0].revoke_reason == RefreshSessionRevokeReason.LOGIN_REPLACED
+    )
+    assert refresh_sessions[1].revoked_at is None
+
+    refresh_response = client.post(
+        "/auth/refresh",
+        json={"refreshToken": second_login_response.json()["data"]["refreshToken"]},
+    )
+    assert refresh_response.status_code == 200
+
+
+def test_logout_all_endpoint_is_not_registered(db_session) -> None:
+    create_user(db_session, UserCreate(username="alice", password="secret123"))
+
+    app = create_test_app(db_session)
+    client = TestClient(app)
+
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret123"},
+    )
+    response = client.post(
+        "/auth/logout-all",
+        headers={"Authorization": f"Bearer {login_response.json()['data']['token']}"},
+    )
+
+    assert response.status_code == 404
 
 
 def test_authenticated_user_can_update_other_user(db_session) -> None:

@@ -1,6 +1,6 @@
 # FastAPI Template
 
-一个基于 FastAPI、SQLModel、Pydantic、MySQL、JWT、Ruff 和 uv 的后端模板。项目包含用户认证、统一响应、全局异常处理、请求日志、Docker 启动和本地开发规范。
+一个基于 FastAPI、SQLModel、Pydantic、MySQL、JWT、Ruff 和 uv 的后端模板。项目包含用户认证、refresh token、统一响应、全局异常处理、请求日志、Docker 启动和本地开发规范。
 
 ## 目录
 
@@ -86,6 +86,15 @@ uv run alembic downgrade -1
 
 - Swagger UI: `http://127.0.0.1:8000/docs`
 - OpenAPI JSON: `http://127.0.0.1:8000/api/v1/openapi.json`
+
+## 认证接口
+
+认证相关接口集中在 `/api/v1/auth`：
+
+- `POST /auth/register`: 注册并返回 access token 与 refresh token。
+- `POST /auth/login`: 登录并返回 access token 与 refresh token。
+- `POST /auth/refresh`: 使用 refresh token 换取新的 access token 和 refresh token。
+- `POST /auth/logout`: 通过 `Authorization` 中的 access token 撤销当前 refresh session。
 
 ## 校验和测试指令
 

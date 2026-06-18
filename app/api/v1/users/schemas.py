@@ -48,6 +48,6 @@ class UserPublic(ApiSchema):
         return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
-class DeletedUserPayload(ApiSchema):
+class DeletedUserRes(ApiSchema):
     id: int
     deleted: bool = True
