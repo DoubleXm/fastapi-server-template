@@ -22,8 +22,17 @@ class AuthRefresh(ApiSchema):
     refresh_token: str = Field(..., min_length=1)
 
 
+class AuthResetPassword(ApiSchema):
+    old_password: str = Field(..., min_length=6, max_length=128)
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
 class AuthLogoutRes(ApiSchema):
     revoked: bool
+
+
+class AuthResetPasswordRes(ApiSchema):
+    reset: bool
 
 
 class AuthRes(ApiSchema):

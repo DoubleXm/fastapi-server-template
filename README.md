@@ -23,7 +23,7 @@
 ├── static/                      # 静态资源目录
 ├── logs/                        # 本地日志输出目录
 ├── .env.example                 # 环境变量示例
-├── .env.test                    # 测试环境配置
+├── .env.test                    # 本地测试环境配置，不提交到 Git
 ├── .editorconfig                # 编辑器基础格式规范
 ├── .pre-commit-config.yaml      # pre-commit 检查配置
 ├── .vscode/settings.json        # VS Code / Cursor 保存格式化配置
@@ -95,6 +95,7 @@ uv run alembic downgrade -1
 - `POST /auth/login`: 登录并返回 access token 与 refresh token。
 - `POST /auth/refresh`: 使用 refresh token 换取新的 access token 和 refresh token。
 - `POST /auth/logout`: 通过 `Authorization` 中的 access token 撤销当前 refresh session。
+- `POST /auth/reset-password`: 登录后通过旧密码重置新密码，并撤销当前 refresh session。
 
 ## 校验和测试指令
 
@@ -120,7 +121,7 @@ uv run pre-commit run --all-files
 
 - `.env.example`: 可提交的环境变量示例，用于说明项目需要哪些配置项。
 - `.env`: 本地开发真实配置，从 `.env.example` 复制后自行修改，不提交到 Git。
-- `.env.test`: 测试环境配置。
+- `.env.test`: 本地测试环境配置，不提交到 Git。
 - `.env.prod`: 生产环境真实配置，不提交到 Git；生产部署也可以直接使用平台环境变量或 secrets 注入。
 
 首次本地启动前先创建本地配置：
@@ -130,6 +131,7 @@ cp .env.example .env
 ```
 
 `STATIC_DIR` 和 `LOG_DIR` 支持相对路径或绝对路径；相对路径会基于项目根目录解析。
+`REFRESH_TOKEN_EXPIRE_DAYS` 必须通过环境变量配置，项目代码中不维护默认过期天数。
 
 默认按 `APP_ENV` 选择配置文件：
 

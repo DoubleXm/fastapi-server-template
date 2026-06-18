@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(..., min_length=16)
     JWT_ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(..., ge=1)
-    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, ge=1)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(..., ge=1)
 
     BACKEND_CORS_ORIGINS: Annotated[list[str] | str, BeforeValidator(parse_cors)]
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]

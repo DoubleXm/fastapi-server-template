@@ -211,6 +211,83 @@ def test_logout_requires_authentication(db_session) -> None:
     assert response.json()["message"] == "Authentication required"
 
 
+def test_reset_password_updates_password_and_revokes_refresh_session(
+    db_session,
+) -> None:
+    create_user(db_session, UserCreate(username="alice", password="secret123"))
+
+    app = create_test_app(db_session, with_exception_handlers=True)
+    client = TestClient(app)
+
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret123"},
+    )
+    reset_response = client.post(
+        "/auth/reset-password",
+        json={"oldPassword": "secret123", "newPassword": "new-secret123"},
+        headers={"Authorization": f"Bearer {login_response.json()['data']['token']}"},
+    )
+
+    assert reset_response.status_code == 200
+    assert reset_response.json()["data"] == {"reset": True}
+
+    refresh_session = db_session.get(RefreshSession, 1)
+    assert refresh_session.revoked_at is not None
+    assert refresh_session.revoke_reason == RefreshSessionRevokeReason.PASSWORD_CHANGED
+
+    old_password_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret123"},
+    )
+    assert old_password_response.status_code == 400
+
+    new_password_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "new-secret123"},
+    )
+    assert new_password_response.status_code == 200
+
+    refresh_response = client.post(
+        "/auth/refresh",
+        json={"refreshToken": login_response.json()["data"]["refreshToken"]},
+    )
+    assert refresh_response.status_code == 401
+
+
+def test_reset_password_rejects_wrong_old_password(db_session) -> None:
+    create_user(db_session, UserCreate(username="alice", password="secret123"))
+
+    app = create_test_app(db_session, with_exception_handlers=True)
+    client = TestClient(app)
+
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "alice", "password": "secret123"},
+    )
+    reset_response = client.post(
+        "/auth/reset-password",
+        json={"oldPassword": "wrong-password", "newPassword": "new-secret123"},
+        headers={"Authorization": f"Bearer {login_response.json()['data']['token']}"},
+    )
+
+    assert reset_response.status_code == 400
+    assert reset_response.json()["message"] == "Invalid old password"
+
+
+def test_reset_password_requires_authentication(db_session) -> None:
+    app = create_test_app(db_session, with_exception_handlers=True)
+    client = TestClient(app)
+
+    response = client.post(
+        "/auth/reset-password",
+        json={"oldPassword": "secret123", "newPassword": "new-secret123"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["message"] == "Authentication required"
+
+
 def test_login_replaces_existing_active_refresh_session(db_session) -> None:
     create_user(db_session, UserCreate(username="alice", password="secret123"))
 

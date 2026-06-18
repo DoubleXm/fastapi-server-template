@@ -16,6 +16,7 @@ def test_settings_require_env_backed_values() -> None:
 
     assert "APP_NAME" in missing_fields
     assert "SECRET_KEY" in missing_fields
+    assert "REFRESH_TOKEN_EXPIRE_DAYS" in missing_fields
     assert "DB_PASSWORD" in missing_fields
     assert "LOG_LEVEL" in missing_fields
 
@@ -28,6 +29,7 @@ def test_settings_keep_database_url_optional() -> None:
         SECRET_KEY="x" * 32,
         JWT_ALGORITHM="HS256",
         ACCESS_TOKEN_EXPIRE_MINUTES=60,
+        REFRESH_TOKEN_EXPIRE_DAYS=7,
         BACKEND_CORS_ORIGINS=[],
         LOG_LEVEL="INFO",
         LOG_MAX_BYTES=1024,
@@ -54,6 +56,7 @@ def test_settings_resolve_static_and_log_dirs_from_env_values() -> None:
         SECRET_KEY="x" * 32,
         JWT_ALGORITHM="HS256",
         ACCESS_TOKEN_EXPIRE_MINUTES=60,
+        REFRESH_TOKEN_EXPIRE_DAYS=7,
         BACKEND_CORS_ORIGINS=[],
         LOG_LEVEL="INFO",
         LOG_MAX_BYTES=1024,
@@ -84,6 +87,7 @@ def test_settings_keep_absolute_static_and_log_dirs() -> None:
         SECRET_KEY="x" * 32,
         JWT_ALGORITHM="HS256",
         ACCESS_TOKEN_EXPIRE_MINUTES=60,
+        REFRESH_TOKEN_EXPIRE_DAYS=7,
         BACKEND_CORS_ORIGINS=[],
         LOG_LEVEL="INFO",
         LOG_MAX_BYTES=1024,
@@ -111,6 +115,7 @@ def test_settings_do_not_expose_debug_alias() -> None:
         SECRET_KEY="x" * 32,
         JWT_ALGORITHM="HS256",
         ACCESS_TOKEN_EXPIRE_MINUTES=60,
+        REFRESH_TOKEN_EXPIRE_DAYS=7,
         BACKEND_CORS_ORIGINS=[],
         LOG_LEVEL="INFO",
         LOG_MAX_BYTES=1024,

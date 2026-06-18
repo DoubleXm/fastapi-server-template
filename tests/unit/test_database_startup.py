@@ -12,6 +12,7 @@ def make_settings(*, app_env: str, create_db_tables: bool = False) -> Settings:
         SECRET_KEY="x" * 32,
         JWT_ALGORITHM="HS256",
         ACCESS_TOKEN_EXPIRE_MINUTES=60,
+        REFRESH_TOKEN_EXPIRE_DAYS=7,
         BACKEND_CORS_ORIGINS=[],
         LOG_LEVEL="INFO",
         LOG_MAX_BYTES=1024,

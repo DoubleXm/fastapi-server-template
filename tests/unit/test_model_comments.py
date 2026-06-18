@@ -32,7 +32,7 @@ def test_refresh_session_model_columns_have_chinese_comments() -> None:
         "revoked_at": "撤销时间",
         "revoke_reason": (
             "撤销原因：1=主动退出，2=修改密码后撤销，3=refresh token 复用，"
-            "4=管理员强制撤销，5=用户被禁用，6=新登录替换旧会话"
+            "6=新登录替换旧会话"
         ),
         "ip_address": "IP 地址",
         "created_at": "创建时间",
@@ -44,6 +44,4 @@ def test_refresh_session_revoke_reason_values_are_stable() -> None:
     assert RefreshSessionRevokeReason.LOGOUT == 1
     assert RefreshSessionRevokeReason.PASSWORD_CHANGED == 2
     assert RefreshSessionRevokeReason.TOKEN_REUSE == 3
-    assert RefreshSessionRevokeReason.ADMIN_REVOKED == 4
-    assert RefreshSessionRevokeReason.USER_DISABLED == 5
     assert RefreshSessionRevokeReason.LOGIN_REPLACED == 6

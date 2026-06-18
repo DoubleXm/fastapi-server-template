@@ -11,6 +11,8 @@ from app.api.v1.auth.schemas import (
     AuthRefresh,
     AuthRegister,
     AuthRes,
+    AuthResetPassword,
+    AuthResetPasswordRes,
 )
 from app.api.v1.users.schemas import UserPublic
 
@@ -75,6 +77,26 @@ def refresh(request: Request, session: SessionDep, payload: AuthRefresh) -> dict
 def logout(session: SessionDep, current_user: CurrentUser) -> dict:
     service.logout(session, user=current_user)
     return ApiResponse.success(data=AuthLogoutRes(revoked=True))
+
+
+@router.post(
+    "/reset-password",
+    response_model=ApiResponse[AuthResetPasswordRes],
+    response_model_exclude_none=True,
+    status_code=status.HTTP_200_OK,
+)
+def reset_password(
+    session: SessionDep,
+    current_user: CurrentUser,
+    payload: AuthResetPassword,
+) -> dict:
+    service.reset_password(
+        session,
+        user=current_user,
+        old_password=payload.old_password,
+        new_password=payload.new_password,
+    )
+    return ApiResponse.success(data=AuthResetPasswordRes(reset=True))
 
 
 def _to_auth_res(auth_result: service.AuthResult) -> AuthRes:

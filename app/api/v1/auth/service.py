@@ -17,6 +17,7 @@ from app.shared.enum import RefreshSessionRevokeReason
 from app.shared.security import (
     create_access_token,
     create_refresh_token,
+    get_password_hash,
     hash_refresh_token,
     verify_password,
 )
@@ -153,6 +154,33 @@ def logout(session: Session, *, user: User) -> bool:
         user_id=user.id,
         revoked_at=utc_now(),
         revoke_reason=RefreshSessionRevokeReason.LOGOUT,
+    )
+    return True
+
+
+def reset_password(
+    session: Session,
+    *,
+    user: User,
+    old_password: str,
+    new_password: str,
+) -> bool:
+    if not verify_password(old_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid old password",
+        )
+
+    users_repository.update_user(
+        session,
+        user=user,
+        updates={"password_hash": get_password_hash(new_password)},
+    )
+    auth_repository.revoke_active_refresh_sessions_by_user_id(
+        session,
+        user_id=user.id,
+        revoked_at=utc_now(),
+        revoke_reason=RefreshSessionRevokeReason.PASSWORD_CHANGED,
     )
     return True
 
