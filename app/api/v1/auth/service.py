@@ -44,41 +44,7 @@ def register(
         session,
         UserCreate(username=payload.username, password=payload.password),
     )
-    return _create_auth_result(
-        session,
-        user,
-        ip_address=ip_address,
-    )
-
-
-def _create_auth_result(
-    session: Session,
-    user: User,
-    *,
-    ip_address: str | None = None,
-) -> AuthResult:
-    # 当前模板不区分多端 session，新登录会替换该用户旧的 active refresh session。
-    auth_repository.revoke_active_refresh_sessions_by_user_id(
-        session,
-        user_id=user.id,
-        revoked_at=utc_now(),
-        revoke_reason=RefreshSessionRevokeReason.LOGIN_REPLACED,
-    )
-    access_token, expires_in = create_access_token(str(user.id))
-    refresh_token = create_refresh_token()
-    auth_repository.create_refresh_session(
-        session,
-        user_id=user.id,
-        current_token_hash=hash_refresh_token(refresh_token),
-        expires_at=utc_now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-        ip_address=ip_address,
-    )
-    return AuthResult(
-        user=user,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=expires_in,
-    )
+    return _create_auth_result(session, user, ip_address=ip_address)
 
 
 def login(
@@ -98,11 +64,7 @@ def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive"
         )
-    return _create_auth_result(
-        session,
-        user,
-        ip_address=ip_address,
-    )
+    return _create_auth_result(session, user, ip_address=ip_address)
 
 
 def refresh(
@@ -119,11 +81,13 @@ def refresh(
 
     # 命中 current token 时执行正常轮换：签发新的 access token 和 refresh token。
     if refresh_session is not None:
+        # 已经因为 登出、重复使用、修改密码、登录重置原因被撤销了
         if refresh_session.revoked_at is not None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token",
             )
+        # 过期
         if as_utc(refresh_session.expires_at) <= utc_now():
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -144,6 +108,8 @@ def refresh(
 
         access_token, expires_in = create_access_token(str(user.id))
         new_refresh_token = create_refresh_token()
+        # 创建一个新的 refresh token 做 current token
+        # refresh_session 中的 current token 做 previous token
         auth_repository.rotate_refresh_session(
             session,
             refresh_session=refresh_session,
@@ -189,3 +155,34 @@ def logout(session: Session, *, user: User) -> bool:
         revoke_reason=RefreshSessionRevokeReason.LOGOUT,
     )
     return True
+
+
+def _create_auth_result(
+    session: Session,
+    user: User,
+    *,
+    ip_address: str | None = None,
+) -> AuthResult:
+    # 当前模板不区分多端 session，新登录会替换该用户旧的 active refresh session。
+    auth_repository.revoke_active_refresh_sessions_by_user_id(
+        session,
+        user_id=user.id,
+        revoked_at=utc_now(),
+        revoke_reason=RefreshSessionRevokeReason.LOGIN_REPLACED,
+    )
+    access_token, expires_in = create_access_token(str(user.id))
+    refresh_token = create_refresh_token()
+    # 每次注册、登录会增加一条 session 记录
+    auth_repository.create_refresh_session(
+        session,
+        user_id=user.id,
+        current_token_hash=hash_refresh_token(refresh_token),
+        expires_at=utc_now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        ip_address=ip_address,
+    )
+    return AuthResult(
+        user=user,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+    )
