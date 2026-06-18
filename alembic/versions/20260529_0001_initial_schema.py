@@ -22,39 +22,6 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.create_table(
-        "todos",
-        sa.Column("id", sa.Integer(), nullable=False, comment="待办事项 ID"),
-        sa.Column(
-            "title",
-            sqlmodel.sql.sqltypes.AutoString(length=100),
-            nullable=False,
-            comment="标题",
-        ),
-        sa.Column(
-            "description",
-            sqlmodel.sql.sqltypes.AutoString(length=500),
-            nullable=True,
-            comment="描述",
-        ),
-        sa.Column("is_completed", sa.Boolean(), nullable=False, comment="是否完成"),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            comment="创建时间",
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            comment="更新时间",
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_todos_id"), "todos", ["id"], unique=False)
-    op.create_index(op.f("ix_todos_title"), "todos", ["title"], unique=False)
-
-    op.create_table(
         "users",
         sa.Column("id", sa.Integer(), nullable=False, comment="用户 ID"),
         sa.Column(
@@ -92,6 +59,3 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_users_username"), table_name="users")
     op.drop_index(op.f("ix_users_id"), table_name="users")
     op.drop_table("users")
-    op.drop_index(op.f("ix_todos_title"), table_name="todos")
-    op.drop_index(op.f("ix_todos_id"), table_name="todos")
-    op.drop_table("todos")

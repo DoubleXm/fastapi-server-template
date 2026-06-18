@@ -24,10 +24,7 @@ router = APIRouter(prefix="/users", tags=["users"])
     response_model_exclude_none=True,
     status_code=status.HTTP_201_CREATED,
 )
-def create_user(
-    session: SessionDep,
-    payload: UserCreate,
-) -> dict:
+def create_user(session: SessionDep, payload: UserCreate) -> dict:
     user = service.create_user(session, payload)
     return ApiResponse.success(
         data=UserPublic.model_validate(user).model_dump(
@@ -57,9 +54,7 @@ def register_user(
 
 
 @router.post(
-    "/login",
-    response_model=ApiResponse[AuthPayload],
-    response_model_exclude_none=True,
+    "/login", response_model=ApiResponse[AuthPayload], response_model_exclude_none=True
 )
 def login(
     session: SessionDep,
@@ -76,9 +71,7 @@ def login(
 
 
 @router.get(
-    "/me",
-    response_model=ApiResponse[UserPublic],
-    response_model_exclude_none=True,
+    "/me", response_model=ApiResponse[UserPublic], response_model_exclude_none=True
 )
 def read_current_user(current_user: CurrentUser) -> dict:
     return ApiResponse.success(
@@ -95,10 +88,7 @@ def read_current_user(current_user: CurrentUser) -> dict:
     response_model=ApiResponse[list[UserPublic]],
     response_model_exclude_none=True,
 )
-def read_users(
-    session: SessionDep,
-    pagination: PaginationDep,
-) -> dict:
+def read_users(session: SessionDep, pagination: PaginationDep) -> dict:
     users, total = service.list_users(
         session,
         offset=pagination.offset,
@@ -122,10 +112,7 @@ def read_users(
     response_model=ApiResponse[UserPublic],
     response_model_exclude_none=True,
 )
-def read_user_by_id(
-    session: SessionDep,
-    userId: int,
-) -> dict:
+def read_user_by_id(session: SessionDep, userId: int) -> dict:
     user_id = userId
     user = service.get_user_or_404(session, user_id)
     return ApiResponse.success(
@@ -142,11 +129,7 @@ def read_user_by_id(
     response_model=ApiResponse[UserPublic],
     response_model_exclude_none=True,
 )
-def update_user(
-    session: SessionDep,
-    userId: int,
-    payload: UserUpdate,
-) -> dict:
+def update_user(session: SessionDep, userId: int, payload: UserUpdate) -> dict:
     user_id = userId
     user = service.get_user_or_404(session, user_id)
     updated_user = service.update_user(session, user=user, payload=payload)
@@ -164,10 +147,7 @@ def update_user(
     response_model=ApiResponse[DeletedUserPayload],
     response_model_exclude_none=True,
 )
-def delete_user(
-    session: SessionDep,
-    userId: int,
-) -> dict:
+def delete_user(session: SessionDep, userId: int) -> dict:
     user_id = userId
     user = service.get_user_or_404(session, user_id)
     service.delete_user(session, user=user)

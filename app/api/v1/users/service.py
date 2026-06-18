@@ -25,12 +25,7 @@ class AuthResult:
     token_type: str = "Bearer"
 
 
-def list_users(
-    session: Session,
-    *,
-    offset: int,
-    limit: int,
-) -> tuple[list[User], int]:
+def list_users(session: Session, *, offset: int, limit: int) -> tuple[list[User], int]:
     return repository.list_users(
         session,
         skip=offset,
@@ -42,8 +37,7 @@ def get_user_or_404(session: Session, user_id: int) -> User:
     user = repository.get_user_by_id(session, user_id)
     if user is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
     return user
 
@@ -52,8 +46,7 @@ def create_user(session: Session, payload: UserCreate) -> User:
     existing_user = repository.get_user_by_username(session, payload.username)
     if existing_user is not None:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Username already exists",
+            status_code=status.HTTP_409_CONFLICT, detail="Username already exists"
         )
     return repository.create_user(
         session,
@@ -64,11 +57,7 @@ def create_user(session: Session, payload: UserCreate) -> User:
 
 def create_auth_result(user: User) -> AuthResult:
     access_token, expires_in = create_access_token(str(user.id))
-    return AuthResult(
-        user=user,
-        access_token=access_token,
-        expires_in=expires_in,
-    )
+    return AuthResult(user=user, access_token=access_token, expires_in=expires_in)
 
 
 def authenticate_user(session: Session, username: str, password: str) -> AuthResult:
@@ -80,8 +69,7 @@ def authenticate_user(session: Session, username: str, password: str) -> AuthRes
         )
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is inactive",
+            status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive"
         )
     return create_auth_result(user)
 

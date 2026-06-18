@@ -14,6 +14,8 @@ dist/
 htmlcov/
 test.db
 
+.env
+.env.prod
 .env.local
 .env.*.local
 

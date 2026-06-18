@@ -1,6 +1,6 @@
 # FastAPI Template
 
-一个基于 FastAPI、SQLModel、Pydantic、MySQL、JWT、Ruff 和 uv 的后端模板。项目包含用户认证、users/todos CRUD、统一响应、全局异常处理、请求日志、Docker 启动和本地开发规范。
+一个基于 FastAPI、SQLModel、Pydantic、MySQL、JWT、Ruff 和 uv 的后端模板。项目包含用户认证、统一响应、全局异常处理、请求日志、Docker 启动和本地开发规范。
 
 ## 目录
 
@@ -12,12 +12,10 @@
 │   │   ├── router.py            # API router 汇总入口
 │   │   ├── schemas.py           # ApiSchema / ApiResponse 通用响应结构
 │   │   └── v1/                  # v1 接口模块
-│   │       ├── health.py        # 健康检查接口
-│   │       ├── todos/           # todos CRUD 模块
 │   │       └── users/           # users、注册、登录模块
 │   ├── core/                    # 核心配置、数据库、日志、异常处理
 │   ├── middlewares/             # 请求日志等中间件
-│   ├── shared/                  # 跨层复用工具、常量、安全方法
+│   ├── shared/                  # 跨层复用工具、常量、枚举、安全方法
 │   └── main.py                  # FastAPI app 创建和中间件/router 注册
 ├── tests/                       # 单元测试和接口行为测试
 ├── alembic/                     # Alembic 数据库迁移脚本
@@ -111,9 +109,16 @@ uv run pre-commit run --all-files
 
 ## 环境文件
 
-- `.env`: 本地开发
-- `.env.test`: 测试环境
-- `.env.prod`: 生产环境模板
+- `.env.example`: 可提交的环境变量示例，用于说明项目需要哪些配置项。
+- `.env`: 本地开发真实配置，从 `.env.example` 复制后自行修改，不提交到 Git。
+- `.env.test`: 测试环境配置。
+- `.env.prod`: 生产环境真实配置，不提交到 Git；生产部署也可以直接使用平台环境变量或 secrets 注入。
+
+首次本地启动前先创建本地配置：
+
+```bash
+cp .env.example .env
+```
 
 `STATIC_DIR` 和 `LOG_DIR` 支持相对路径或绝对路径；相对路径会基于项目根目录解析。
 

@@ -19,15 +19,13 @@ app/
 │   ├── router.py         # API router 汇总入口
 │   ├── schemas.py        # 全局 ApiSchema / ApiResponse
 │   └── v1/
-│       ├── health.py     # 健康检查
-│       ├── users/        # users、注册、登录模块
-│       └── todos/        # todos CRUD 模块
+│       └── users/        # users、注册、登录模块
 ├── core/
 │   ├── config.py         # env 配置读取
 │   ├── database.py       # SQLModel engine/session/table 创建
 │   ├── exception_handlers.py
-│   └── logging.py
-├── middlewares/          # request/response 日志中间件
+│   └── logger/           # Loguru、SQLAlchemy、Uvicorn 等日志配置
+├── middlewares/          # 自定义的中间件
 └── shared/               # 轻框架依赖的工具、常量、安全方法
 alembic/                  # Alembic 数据库迁移脚本
 ```
@@ -53,7 +51,7 @@ app/api/v1/<module>/
 
 新增 API 模块时：
 
-1. 先阅读现有 `users`、`todos` 模块和相关测试，确认当前项目模式。
+1. 先阅读现有 `users` 模块和相关测试，确认当前项目模式。
 2. 按 `models.py`、`schemas.py`、`repository.py`、`service.py`、`router.py` 的顺序实现；只有存在真实可复用依赖时才新增模块级 `deps.py`。
 3. 在 `app/api/router.py` 注册 router。
 4. 如新增 SQLModel table，在 `app/core/database.py:import_model_modules` 导入模型。
@@ -94,7 +92,10 @@ app/api/v1/<module>/
 10. 在 `app/core/database.py:import_model_modules` 导入表模型。
 11. 测试需要 metadata 时，在 `tests/conftest.py` 导入表模型。
 12. 生成或更新 Alembic migration，并人工 review 字段类型、索引、comment、默认值和数据迁移逻辑。
-13. 仅当启动方式、目录结构、开发规范或模板说明发生变化时，更新 `README.md` 或 `AGENTS.md`。
+13. 按文档职责更新说明：
+    - 只有权限模型、token 策略、日志架构、异常策略、迁移策略、分层规则、第三方集成边界等核心约束变化，或当前 `AGENTS.md` 已不足以约束后续迭代时，才更新 `AGENTS.md`。
+    - 启动方式、目录结构、模板功能、接口说明、命令、环境变量和使用说明变化时，更新 `README.md`。
+    - 普通业务模块新增、删除、重命名，只要符合既有约束，不应为了记录变化而更新 `AGENTS.md`。
 14. 运行验证：
     - `uv run ruff check app tests`
     - `uv run pytest -q`
@@ -110,6 +111,7 @@ app/api/v1/<module>/
 - 不在 repository 中抛业务 HTTP 异常；repository 只处理数据访问。
 - 不在 service 中拼 API response；service 返回模型或业务结果。
 - 不在 shared 中放 FastAPI `Depends`、`Query`、router dependency 或 API response schema。
+- lifespan 逻辑默认保留在 `app/main.py`。只有启动和关闭流程复杂度较高，例如挂载多个定时任务、外部连接、后台 worker 或资源编排逻辑时，才建议抽离到单独文件。
 - 修改行为时优先增加测试；测试命名描述行为，不写泛泛的 `test_works`。
 
 ## SQLModel 模型规范
@@ -117,8 +119,8 @@ app/api/v1/<module>/
 数据库表使用 SQLModel：
 
 ```python
-class Todo(SQLModel, table=True):
-    __tablename__ = "todos"
+class Item(SQLModel, table=True):
+    __tablename__ = "items"
 ```
 
 字段规则：
@@ -169,7 +171,7 @@ created_at: datetime = Field(
 - 自动生成的迁移必须人工 review，重点检查字段类型、索引、unique、nullable、default、comment 和数据迁移逻辑。
 - `CREATE_DB_TABLES` 只允许用于本地或测试快速初始化；生产环境即使设置为 `true` 也不会自动建表。
 - 新模块的表模型要加入 `app/core/database.py:import_model_modules`，确保 Alembic metadata 能发现。
-- 不要在业务代码里直接调用 `SQLModel.metadata.create_all` 作为正式建表或改表方案。
+- 应用启动时是否执行 `SQLModel.metadata.create_all` 由 `CREATE_DB_TABLES` 和 `APP_ENV` 共同控制；不要在业务代码里绕过该判断直接调用 `create_all` 作为正式建表或改表方案。
 
 ## Schema 规范
 
@@ -177,18 +179,19 @@ created_at: datetime = Field(
 - 外部 API 输入/输出使用 lowerCamelCase。
 - Python 内部字段保持 snake_case。
 - Create / Update / Public schema 分开定义。
+- 当 Create / Update / Public 之间存在稳定共享字段时，可以抽出 `<Module>Base` 复用字段定义；base 通常继承 `ApiSchema`，具体 schema 再继承 base。不要为了偶然重复的少量字段过度抽象。
 - Update schema 字段一般为可选，并在 service 中使用 `model_dump(exclude_unset=True)`。
 - `description` 只给枚举、开关、状态和难理解字段使用。
 
 示例：
 
 ```python
-class TodoCreate(ApiSchema):
+class ItemCreate(ApiSchema):
     title: str = Field(..., min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=500)
 
 
-class TodoUpdate(ApiSchema):
+class ItemUpdate(ApiSchema):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     is_completed: bool | None = None
 ```
@@ -200,19 +203,19 @@ repository 只负责数据库访问，不写业务异常，不组装 response。
 推荐模式：
 
 ```python
-def get_todo_by_id(session: Session, todo_id: int) -> Todo | None:
-    return session.get(Todo, todo_id)
+def get_item_by_id(session: Session, item_id: int) -> Item | None:
+    return session.get(Item, item_id)
 
 
-def list_todos(session: Session, *, skip: int, limit: int) -> tuple[list[Todo], int]:
-    total = session.exec(select(func.count()).select_from(Todo)).one()
-    todos = session.exec(
-        select(Todo).order_by(Todo.id.desc()).offset(skip).limit(limit)
+def list_items(session: Session, *, skip: int, limit: int) -> tuple[list[Item], int]:
+    total = session.exec(select(func.count()).select_from(Item)).one()
+    items = session.exec(
+        select(Item).order_by(Item.id.desc()).offset(skip).limit(limit)
     ).all()
-    return list(todos), total
+    return list(items), total
 ```
 
-写入操作负责 `add/commit/refresh`，保持与现有 users/todos 模块一致。
+写入操作负责 `add/commit/refresh`，保持与现有 users 模块一致。
 
 ## Service 规范
 
@@ -221,11 +224,11 @@ service 负责业务规则、校验和 HTTP 异常，不负责 FastAPI response 
 推荐模式：
 
 ```python
-def get_todo_or_404(session: Session, todo_id: int) -> Todo:
-    todo = repository.get_todo_by_id(session, todo_id)
-    if todo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found")
-    return todo
+def get_item_or_404(session: Session, item_id: int) -> Item:
+    item = repository.get_item_by_id(session, item_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    return item
 ```
 
 更新操作使用 `exclude_unset=True`，避免把未传字段写成 `None`：
@@ -233,8 +236,8 @@ def get_todo_or_404(session: Session, todo_id: int) -> Todo:
 ```python
 updates = payload.model_dump(exclude_unset=True)
 if not updates:
-    return todo
-return repository.update_todo(session, todo=todo, updates=updates)
+    return item
+return repository.update_item(session, item=item, updates=updates)
 ```
 
 ## Router 规范
@@ -251,9 +254,9 @@ router 只处理 HTTP 层：
 列表接口使用 `PaginationDep`，返回 `data + total`：
 
 ```python
-@router.get("", response_model=ApiResponse[list[TodoPublic]])
-def read_todos(session: SessionDep, pagination: PaginationDep) -> dict:
-    todos, total = service.list_todos(
+@router.get("", response_model=ApiResponse[list[ItemPublic]])
+def read_items(session: SessionDep, pagination: PaginationDep) -> dict:
+    items, total = service.list_items(
         session,
         offset=pagination.offset,
         limit=pagination.limit,
@@ -300,7 +303,7 @@ dependencies=[Depends(get_current_user)]
 
 涉及第三方组件、SDK 或外部 API 集成时，按依赖方向拆分 `infra` 和应用侧 `services`，不要把第三方请求散落在 router、业务 service 或 shared 工具里。
 
-推荐结构：
+推荐结构可以从以下形式开始，但文件名和拆分粒度不是强约束，应随 provider 和业务复杂度调整：
 
 ```text
 infra/
@@ -308,7 +311,7 @@ infra/
 └── <provider>/
     ├── __init__.py
     ├── api.py               # 可选：统一管理第三方真实接口地址、path 和 endpoint 常量
-    ├── client.py            # 第三方 client，封装 httpx/SDK 调用、鉴权头和底层请求
+    ├── client.py            # 可选：第三方 client，封装 httpx/SDK 调用、鉴权头和底层请求
     └── schemas.py           # 可选：第三方 request/response 数据结构
 
 app/services/
@@ -320,17 +323,17 @@ app/services/
 
 - `infra/` 只处理外部系统适配：client 初始化、请求发送、响应解析、第三方错误转换、重试/超时等基础能力。
 - 第三方真实地址必须集中管理，不要在 router、service、repository 中散落 URL 字符串；如果是 HTTP API 集成，优先放在对应 provider 的 `infra/<provider>/api.py`。
-- `api.py` 是 endpoint 集中管理的推荐方案，不是所有第三方集成都必须创建。对于官方 SDK 型集成，如果 SDK 已经封装了具体接口，可以只保留 `client.py` 和按功能拆分的 SDK 适配文件。
+- `api.py`、`client.py`、`schemas.py` 是推荐起点，不是所有第三方集成都必须创建。对于官方 SDK 型集成，如果 SDK 已经封装了具体接口，可以只保留 `client.py` 和按功能拆分的 SDK 适配文件。
 - 第三方 base url、token、timeout 等环境相关配置放在 `app/core/config.py` 的 `Settings` 中，由 client 注入或读取，避免硬编码。
 - 如果第三方 client 提供的能力会被业务使用，应在 `app/services/` 创建对应应用 service，通过该 service 暴露业务语义；业务模块调用应用 service，不直接调用 `infra` client。
-- `app/services/` 不拼 API response envelope，不依赖 router；它可以编排一个或多个 `infra` client，并把第三方数据转换成当前项目内部模型、schema 或普通业务结果。
-- 简单集成可以使用单文件，例如 `infra/lark/client.py` 和 `app/services/lark_service.py`；复杂集成按功能拆成文件夹，例如 `infra/lark/messages/client.py`、`infra/lark/auth/client.py`，但仍要保留清晰的外部接口或 SDK 能力边界。
+- `app/services/` 不拼 API response envelope，不依赖 router；它可以编排一个或多个 `infra` client，并把第三方数据转换成当前项目内部模型、schema 或普通业务结果。service 的结构应尽量和 `infra` 中的业务能力对应，避免从项目结构看不出 service 归属。
+- 简单集成可以使用单文件，例如 `infra/lark/client.py` 和 `app/services/lark_service.py`；复杂集成可以按业务能力继续拆包，例如 `infra/lark/tasks.py`、`infra/lark/emails.py`，并在 `app/services/lark/` 下保持对应服务边界。具体拆分以当前业务复杂度为准，但仍要保留清晰的外部接口或 SDK 能力边界。
 - 如果第三方功能和某个业务模块强绑定，业务模块 service 负责业务规则，`app/services/<provider>_service.py` 负责跨外部系统编排，避免把外部请求写进 repository。
 - 测试时优先 mock `infra` client 的边界或用 fake client 注入，避免单元测试真实访问第三方 API。
 
 ## 枚举和状态规则
 
-如果系统中出现枚举或状态类概念，统一在 `app/shared/constants.py` 中声明。
+如果系统中出现枚举或状态类概念，优先在 `app/shared/enums.py` 中声明；普通常量优先放在 `app/shared/constants.py`。
 
 规则：
 
@@ -341,6 +344,7 @@ app/services/
 - 入库前把 API 常量转换为数据库数字。
 - 出库后把数据库数字转换为 API 常量。
 - 枚举/status 的含义要有中文注释或 `description`。
+- 每次新增或修改 `enums.py`、`constants.py` 时，都要自检当前文件是否已经混入过多业务域。复杂度上升时，按业务拆分为 `app/shared/enums/<module.py>` 或 `app/shared/constants/<module>.py`，避免共享文件变成无边界的杂物间。
 
 不要在 router、service、repository 中散落字符串字面量或魔法数字。
 
@@ -373,7 +377,6 @@ username = payload.username
 - 程序员通识词汇可以保留英文，例如 `Request body`、`Response body`、`Duration`、`token`、`handler`。
 - 非计算机常用词或复杂业务场景可以使用中文。
 - 不要无脑全中文，也不要无脑全英文。
-- request/response body 日志必须脱敏敏感字段。
 
 ## 测试规范
 

@@ -13,7 +13,6 @@ engine = create_engine(
 
 def import_model_modules() -> None:
     """集中导入所有 SQLModel table，保证 metadata 和 Alembic 都能发现模型。"""
-    import app.api.v1.todos.models  # noqa: F401
     import app.api.v1.users.models  # noqa: F401
 
 

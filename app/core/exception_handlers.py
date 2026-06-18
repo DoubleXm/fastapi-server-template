@@ -39,7 +39,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(
+    logger.exception(
         "Unhandled exception method={} path={} error={}",
         request.method,
         request.url.path,

@@ -21,8 +21,7 @@ class PaginationParams:
         self,
         page_num: Annotated[int, Query(alias="pageNum", ge=1)] = DEFAULT_PAGE_NUM,
         page_size: Annotated[
-            int,
-            Query(alias="pageSize", ge=1, le=MAX_PAGE_SIZE),
+            int, Query(alias="pageSize", ge=1, le=MAX_PAGE_SIZE)
         ] = DEFAULT_PAGE_SIZE,
     ):
         self.page_num = page_num
@@ -43,8 +42,7 @@ PaginationDep = Annotated[PaginationParams, Depends(PaginationParams)]
 def get_current_user(
     session: SessionDep,
     credentials: Annotated[
-        HTTPAuthorizationCredentials | None,
-        Security(bearer_scheme),
+        HTTPAuthorizationCredentials | None, Security(bearer_scheme)
     ],
 ) -> User:
     """校验 token 并返回当前登录用户。"""

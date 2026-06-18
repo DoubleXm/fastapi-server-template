@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import anyio
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 import app.core.exception_handlers as exception_handlers
 from app.api.deps import PaginationParams
@@ -161,19 +163,22 @@ def test_global_exception_handler_logs_traceback_context(monkeypatch) -> None:
 
     monkeypatch.setattr(exception_handlers, "logger", CapturingLogger())
 
-    app = FastAPI(debug=False)
-    register_exception_handlers(app)
-
-    @app.get("/error")
-    def error() -> None:
-        raise RuntimeError("boom")
-
-    client = TestClient(app, raise_server_exceptions=False)
-
-    response = client.get("/error")
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/error",
+            "headers": [],
+        }
+    )
+    response = anyio.run(
+        exception_handlers.global_exception_handler,
+        request,
+        RuntimeError("boom"),
+    )
 
     assert response.status_code == 500
-    assert response.json()["message"] == "Internal server error"
+    assert b'"message":"Internal server error"' in response.body
     assert records == [
         "Unhandled exception method=GET path=/error error=boom",
     ]
