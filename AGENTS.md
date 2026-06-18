@@ -19,7 +19,8 @@ app/
 │   ├── router.py         # API router 汇总入口
 │   ├── schemas.py        # 全局 ApiSchema / ApiResponse
 │   └── v1/
-│       └── users/        # users、注册、登录模块
+│       ├── auth/         # 登录、注册、第三方登录等认证入口
+│       └── users/        # users CRUD 和当前用户信息
 ├── core/
 │   ├── config.py         # env 配置读取
 │   ├── database.py       # SQLModel engine/session/table 创建
@@ -295,6 +296,10 @@ dependencies=[Depends(get_current_user)]
 
 - 全局 FastAPI 依赖放在 `app/api/deps.py`。
 - 当前模板采用“登录后可操作”的权限模型，不做 owner-only 限制。
+- `auth/` 负责登录、注册、refresh token、logout、第三方登录、扫码登录等认证入口。
+- `users/` 负责用户资源 CRUD、用户资料和 `/users/me`。
+- `auth` 可以调用 `users` 的 repository 或 service 完成查用户、建用户；`users` 不反向依赖 `auth`。
+- 新增认证能力优先放在 `auth` 模块，不要塞回 `users` 模块。
 - 请求 token 从 `Authorization: Bearer <token>` 读取。
 - 登录和注册接口通过 response body 的 `data.token` 返回 token，不通过 response header 返回 token。
 - 业务模块只有在确实存在模块级依赖时才创建 `deps.py`。

@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_db
+from app.api.v1.auth.router import router as auth_router
 from app.api.v1.users.router import router as users_router
 from app.api.v1.users.schemas import UserCreate
 from app.api.v1.users.service import create_user
@@ -13,16 +14,24 @@ from app.core.exception_handlers import register_exception_handlers
 from app.shared.security import create_access_token, decode_access_token
 
 
+def create_test_app(db_session, *, with_exception_handlers: bool = False) -> FastAPI:
+    app = FastAPI()
+    app.dependency_overrides[get_db] = lambda: db_session
+    if with_exception_handlers:
+        register_exception_handlers(app)
+    app.include_router(auth_router)
+    app.include_router(users_router)
+    return app
+
+
 def test_login_returns_token_in_data_without_authorization_header(db_session) -> None:
     create_user(db_session, UserCreate(username="alice", password="secret123"))
 
-    app = FastAPI()
-    app.dependency_overrides[get_db] = lambda: db_session
-    app.include_router(users_router)
+    app = create_test_app(db_session)
     client = TestClient(app)
 
     response = client.post(
-        "/users/login",
+        "/auth/login",
         json={"username": "alice", "password": "secret123"},
     )
 
@@ -35,18 +44,14 @@ def test_login_returns_token_in_data_without_authorization_header(db_session) ->
     assert response.json()["data"]["user"]["username"] == "alice"
 
 
-def test_login_response_token_decodes(
-    db_session,
-) -> None:
+def test_login_response_token_decodes(db_session) -> None:
     create_user(db_session, UserCreate(username="alice", password="secret123"))
 
-    app = FastAPI()
-    app.dependency_overrides[get_db] = lambda: db_session
-    app.include_router(users_router)
+    app = create_test_app(db_session)
     client = TestClient(app)
 
     response = client.post(
-        "/users/login",
+        "/auth/login",
         json={"username": "alice", "password": "secret123"},
     )
 
@@ -59,14 +64,11 @@ def test_login_response_token_decodes(
 def test_login_token_can_immediately_access_current_user(db_session) -> None:
     create_user(db_session, UserCreate(username="alice", password="secret123"))
 
-    app = FastAPI()
-    app.dependency_overrides[get_db] = lambda: db_session
-    register_exception_handlers(app)
-    app.include_router(users_router)
+    app = create_test_app(db_session, with_exception_handlers=True)
     client = TestClient(app)
 
     login_response = client.post(
-        "/users/login",
+        "/auth/login",
         json={"username": "alice", "password": "secret123"},
     )
     me_response = client.get(
@@ -79,13 +81,11 @@ def test_login_token_can_immediately_access_current_user(db_session) -> None:
 
 
 def test_register_returns_body_token_without_authorization_header(db_session) -> None:
-    app = FastAPI()
-    app.dependency_overrides[get_db] = lambda: db_session
-    app.include_router(users_router)
+    app = create_test_app(db_session)
     client = TestClient(app)
 
     response = client.post(
-        "/users/register",
+        "/auth/register",
         json={"username": "alice", "password": "secret123"},
     )
 
@@ -98,6 +98,19 @@ def test_register_returns_body_token_without_authorization_header(db_session) ->
     assert response.json()["data"]["user"]["username"] == "alice"
 
 
+def test_create_user_requires_authentication(db_session) -> None:
+    app = create_test_app(db_session, with_exception_handlers=True)
+    client = TestClient(app)
+
+    response = client.post(
+        "/users",
+        json={"username": "alice", "password": "secret123"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["message"] == "Authentication required"
+
+
 def test_authenticated_user_can_update_other_user(db_session) -> None:
     create_user(db_session, UserCreate(username="admin", password="secret123"))
     other_user = create_user(
@@ -105,13 +118,11 @@ def test_authenticated_user_can_update_other_user(db_session) -> None:
         UserCreate(username="bob", password="secret123"),
     )
 
-    app = FastAPI()
-    app.dependency_overrides[get_db] = lambda: db_session
-    app.include_router(users_router)
+    app = create_test_app(db_session)
     client = TestClient(app)
 
     login_response = client.post(
-        "/users/login",
+        "/auth/login",
         json={"username": "admin", "password": "secret123"},
     )
     update_response = client.patch(
@@ -131,10 +142,7 @@ def test_expired_token_returns_expired_message(db_session) -> None:
         expires_delta=timedelta(seconds=-1),
     )
 
-    app = FastAPI()
-    app.dependency_overrides[get_db] = lambda: db_session
-    register_exception_handlers(app)
-    app.include_router(users_router)
+    app = create_test_app(db_session, with_exception_handlers=True)
     client = TestClient(app)
 
     response = client.get(
@@ -147,10 +155,7 @@ def test_expired_token_returns_expired_message(db_session) -> None:
 
 
 def test_malformed_token_returns_invalid_message(db_session) -> None:
-    app = FastAPI()
-    app.dependency_overrides[get_db] = lambda: db_session
-    register_exception_handlers(app)
-    app.include_router(users_router)
+    app = create_test_app(db_session, with_exception_handlers=True)
     client = TestClient(app)
 
     response = client.get(

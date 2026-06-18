@@ -6,12 +6,9 @@ from app.api.deps import CurrentUser, PaginationDep, SessionDep, get_current_use
 from app.api.schemas import ApiResponse
 from app.api.v1.users import service
 from app.api.v1.users.schemas import (
-    AuthPayload,
     DeletedUserPayload,
     UserCreate,
-    UserLogin,
     UserPublic,
-    UserRegister,
     UserUpdate,
 )
 
@@ -20,6 +17,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.post(
     "",
+    dependencies=[Depends(get_current_user)],
     response_model=ApiResponse[UserPublic],
     response_model_exclude_none=True,
     status_code=status.HTTP_201_CREATED,
@@ -35,43 +33,10 @@ def create_user(session: SessionDep, payload: UserCreate) -> dict:
     )
 
 
-@router.post(
-    "/register",
-    response_model=ApiResponse[AuthPayload],
-    response_model_exclude_none=True,
-    status_code=status.HTTP_201_CREATED,
-)
-def register_user(
-    session: SessionDep,
-    payload: UserRegister,
-) -> dict:
-    user = service.create_user(session, UserCreate(**payload.model_dump()))
-    auth_result = service.create_auth_result(user)
-    return ApiResponse.success(
-        data=auth_payload(auth_result),
-        code=status.HTTP_201_CREATED,
-    )
-
-
-@router.post(
-    "/login", response_model=ApiResponse[AuthPayload], response_model_exclude_none=True
-)
-def login(
-    session: SessionDep,
-    payload: UserLogin,
-) -> dict:
-    auth_result = service.authenticate_user(
-        session,
-        username=payload.username,
-        password=payload.password,
-    )
-    return ApiResponse.success(
-        data=auth_payload(auth_result),
-    )
-
-
 @router.get(
-    "/me", response_model=ApiResponse[UserPublic], response_model_exclude_none=True
+    "/me",
+    response_model=ApiResponse[UserPublic],
+    response_model_exclude_none=True,
 )
 def read_current_user(current_user: CurrentUser) -> dict:
     return ApiResponse.success(
@@ -157,10 +122,3 @@ def delete_user(session: SessionDep, userId: int) -> dict:
             by_alias=True,
         ),
     )
-
-
-def auth_payload(auth_result: service.AuthResult) -> dict:
-    return AuthPayload(
-        token=auth_result.access_token,
-        user=UserPublic.model_validate(auth_result.user),
-    ).model_dump(mode="json", by_alias=True)

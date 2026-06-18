@@ -17,16 +17,11 @@ class UserBase(ApiSchema):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=6, max_length=128)
-
-
-class UserRegister(UserCreate):
-    pass
-
-
-class UserLogin(ApiSchema):
-    username: str = Field(..., min_length=3, max_length=50)
-    password: str = Field(..., min_length=6, max_length=128)
+    password: str = Field(
+        ...,
+        min_length=6,
+        max_length=128,
+    )
 
 
 class UserUpdate(ApiSchema):
@@ -56,8 +51,3 @@ class UserPublic(ApiSchema):
 class DeletedUserPayload(ApiSchema):
     id: int
     deleted: bool = True
-
-
-class AuthPayload(ApiSchema):
-    token: str
-    user: UserPublic

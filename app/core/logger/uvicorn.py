@@ -34,7 +34,7 @@ class InterceptHandler(logging.Handler):
 
 def configure_uvicorn_logging() -> None:
     # 禁用原生 access log 输出
-    # INFO:     127.0.0.1:58932 - "POST /api/v1/users/register HTTP/1.1" 409 Conflict
+    # INFO:     127.0.0.1:58932 - "POST /api/v1/auth/register HTTP/1.1" 409 Conflict
     access_logger = logging.getLogger(_UVICORN_ACCESS_LOGGER_NAME)
     access_logger.handlers.clear()
     access_logger.propagate = False

@@ -12,7 +12,8 @@
 │   │   ├── router.py            # API router 汇总入口
 │   │   ├── schemas.py           # ApiSchema / ApiResponse 通用响应结构
 │   │   └── v1/                  # v1 接口模块
-│   │       └── users/           # users、注册、登录模块
+│   │       ├── auth/            # 登录、注册等认证入口
+│   │       └── users/           # users CRUD 和当前用户信息
 │   ├── core/                    # 核心配置、数据库、日志、异常处理
 │   ├── middlewares/             # 请求日志等中间件
 │   ├── shared/                  # 跨层复用工具、常量、枚举、安全方法
@@ -21,9 +22,8 @@
 ├── alembic/                     # Alembic 数据库迁移脚本
 ├── static/                      # 静态资源目录
 ├── logs/                        # 本地日志输出目录
-├── .env                         # 本地环境配置
+├── .env.example                 # 环境变量示例
 ├── .env.test                    # 测试环境配置
-├── .env.prod                    # 生产环境配置模板
 ├── .editorconfig                # 编辑器基础格式规范
 ├── .pre-commit-config.yaml      # pre-commit 检查配置
 ├── .vscode/settings.json        # VS Code / Cursor 保存格式化配置
